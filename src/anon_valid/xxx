@@ -1,0 +1,22 @@
+(comment
+
+  (defmacro define-pattern-group
+  [group-name language & pattern-defs]
+  `(def (str '~group-name (if language (str '- ~language)))))
+;;      {:system ~system
+;;       (if language (list :language ~language))
+;;       :group-name ~group-name 
+;;       :definitions ~pattern-defs}
+
+(defn field-pattern 
+  ([x-name] (list {:type :string :field-name x-name}))
+  ([x-type & x-names] (map #(hash-map :type x-type :field-name %) x-names)))
+
+  (ns sensitive-fields)
+  (require 'anon-valid.core)
+
+  (define-pattern-group "personal fields" :hun 
+    (field-pattern :string "field-name1" "field-name2)) ; with type definition, possible values :string, :date, :time, :dateimte, :number
+    (field-pattern "field-name1" "field-name2") ; without type definition, default is :string
+)
+
