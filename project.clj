@@ -4,6 +4,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.7.0"] 
                  [org.clojure/java.jdbc "0.3.7"]
+                 [org.clojure/tools.cli "0.3.2"]
                  [clojure.jdbc/clojure.jdbc-c3p0 "0.3.1"]
                  [org.clojure/tools.logging "0.3.1"]
                  [org.slf4j/slf4j-log4j12 "1.7.1"]

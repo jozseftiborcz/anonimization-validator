@@ -5,24 +5,28 @@
 (require '[clojure.java.jdbc :as sql] 
          '[clojure.tools.logging :as log] 
          '[jdbc.pool.c3p0 :as pool] 
+         '[anon-valid.db :as db]
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as field-handler])
 
-(def db-spec {:subprotocol "mysql"
-              :subname "//localhost:3306/xxx"
-              :user "test"
-              :password "test"})
+;; field filters
+(defn ff*stringish
+  []
+  (filter #(not (nil? (db/stringish-field-types (:type_name %1)))))) 
 
-(def pool
-  (pool/make-datasource-spec db-spec))
+(defmacro ff*min-length
+  [len]
+  `(filter #(> (:column_size %1) ~len)))
 
-(defn get-tables []
-  (sql/with-db-connection [con pool] (doall (resultset-seq (.getTables (.getMetaData (:connection con)) nil nil nil (into-array ["TABLE" "VIEW"]))))))
+(defn table-row-counts []
+  (log/info "Printing table row counts")
+  (sql/with-db-connection [con db/pool]
+    (let [tables (db/get-tables con)
+          data-tables (map #(assoc % :row_count
+                                   (:result (first (sql/query con [(db/qb*row-count (:table_name %1))])))) tables)
+          non-zero-tables (filter #(> (:row_count %) 0) data-tables)] 
+      (doall 
+        (map #(println (:table_name %1) (:row_count %1)) non-zero-tables))
+      (printf "Number of non-empty tables: %d\n" (count non-zero-tables)))))
 
-(defn get-fields [table] 
-  (sql/with-db-connection [con pool] (doall (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil)))))
-
-(defn get-field-names [table]
-  (map :column_name (get-fields table)))
-
-
+  

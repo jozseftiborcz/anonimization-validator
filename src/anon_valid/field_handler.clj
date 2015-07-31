@@ -18,7 +18,7 @@
   (atom #{}))
 
 (def field-definitions2
-  (atom #{:exact-match {} :like-match []}))
+  (atom []))
 
 (defn sensitive-fields
   [& args]
