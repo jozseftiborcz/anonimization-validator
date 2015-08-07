@@ -29,4 +29,11 @@
         (map #(println (:table_name %1) (:row_count %1)) non-zero-tables))
       (printf "Number of non-empty tables: %d\n" (count non-zero-tables)))))
 
+(defn sensitive-fields []
+  (log/info "Printing sensitive fields")
+  (sql/with-db-connection [con db/pool]
+    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))
+          by-tables (reduce #(assoc %1 (:table_name %2) (conj (%1 (:table_name %2)) (:column_name %2))) {} fields)]
+      (doall 
+        (map #(println (format "%s: %d: %s" %1 (count (by-tables %1)) (by-tables %1))) (keys by-tables))))))
   

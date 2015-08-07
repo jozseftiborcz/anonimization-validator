@@ -15,7 +15,7 @@
 (def cli-options
   [["-h" "--help" "Print this help" :id :help]
    ["-x" "--ex COMMAND" "Execute a command" :id :execute-command
-    :validate-fn #(#{"table-row-counts"} %)
+    :validate-fn #(#{"table-row-counts" "sensitive-fields"} %)
     ]
    ["-p" "--pretty" "Use pretty formatting where possible" :id :pretty-formating]])
 
@@ -51,9 +51,10 @@
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (cond
       (:help options) (exit 0 (usage summary))
-      errors (exit 1 (error-msg errors))
-      (:execute-command options) (core/table-row-counts))
-    )
+      errors (exit 1 (error-msg errors)))
+    (case (:execute-command options) 
+      "table-row-counts" (core/table-row-counts)
+      "sensitive-fields" (core/sensitive-fields)))
 ;  (log/info (db/tables-with-sensitive-fields))
   ;(println (sql/query connect-db ["select * from jos_vm_module"]))
   ;(log/info (core/get-tables))
