@@ -23,17 +23,22 @@
   (sql/with-db-connection [con db/pool]
     (let [tables (db/get-tables con)
           data-tables (map #(assoc % :row_count
-                                   (:result (first (sql/query con [(db/qb*row-count (:table_name %1))])))) tables)
+                                   (:result (first (sql/query con (db/qb*row-count (:table_name %1)))))
+                                   ) tables)
           non-zero-tables (filter #(> (:row_count %) 0) data-tables)] 
       (doall 
         (map #(println (:table_name %1) (:row_count %1)) non-zero-tables))
       (printf "Number of non-empty tables: %d\n" (count non-zero-tables)))))
 
-(defn sensitive-fields []
+(defn sensitive-fields 
+  ([] (sql/with-db-connection [con db/pool] (sensitive-fields con)))
+  ([con]
+    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))]
+      (reduce #(assoc %1 (:table_name %2) (conj (%1 (:table_name %2)) (:column_name %2))) {} fields))))
+  
+(defn print-sensitive-fields []
   (log/info "Printing sensitive fields")
   (sql/with-db-connection [con db/pool]
-    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))
-          by-tables (reduce #(assoc %1 (:table_name %2) (conj (%1 (:table_name %2)) (:column_name %2))) {} fields)]
+    (let [fields (sensitive-fields con)]
       (doall 
-        (map #(println (format "%s: %d: %s" %1 (count (by-tables %1)) (by-tables %1))) (keys by-tables))))))
-  
+        (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (fields %1))) (keys fields))))))

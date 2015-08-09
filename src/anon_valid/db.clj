@@ -26,9 +26,9 @@
   ([] (get-fields nil))
   ([con-or-table] 
    (if (or (string? con-or-table) (nil? con-or-table)) 
-     (sql/with-db-connection [con pool] (get-fields con con-or-table))
+     (sql/with-db-connection [con pool] (doall (get-fields con con-or-table)))
      (get-fields con-or-table nil)))
-  ([con table] (doall (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil)))))
+  ([con table] (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil))))
 
 (defn table-name []
   (map :table_name))
@@ -40,7 +40,10 @@
 
 ;; query builder
 (defmacro qb*row-count [table-name] 
-  `(str "select count(*) as result from " ~table-name))
+  `[(str "select count(*) as result from " ~table-name)])
+
+(defmacro qb*non-empty-field-count [table-name field-name]
+  `[(str "select count(*) as result from " ~table-name " where ? is not null and ? != ''") ~field-name ~field-name])
 
 ;; field selector
 (defmacro fs*length

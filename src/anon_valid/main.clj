@@ -54,7 +54,7 @@
       errors (exit 1 (error-msg errors)))
     (case (:execute-command options) 
       "table-row-counts" (core/table-row-counts)
-      "sensitive-fields" (core/sensitive-fields)))
+      "sensitive-fields" (core/print-sensitive-fields)))
 ;  (log/info (db/tables-with-sensitive-fields))
   ;(println (sql/query connect-db ["select * from jos_vm_module"]))
   ;(log/info (core/get-tables))

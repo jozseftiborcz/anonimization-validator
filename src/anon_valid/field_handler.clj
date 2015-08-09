@@ -17,9 +17,6 @@
 (def field-definitions
   (atom #{}))
 
-(def field-definitions2
-  (atom []))
-
 (defn sensitive-fields
   [& args]
   (if (seq? args) 
@@ -29,5 +26,5 @@
 
 (defn sensitive-field?
   [fld]
-  (not-nil? (@field-definitions fld)))
+  (not-nil? (some #(re-find (re-pattern %) fld) @field-definitions)))
 
