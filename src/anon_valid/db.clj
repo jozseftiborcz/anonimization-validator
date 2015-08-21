@@ -8,13 +8,53 @@
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as fh])
 
-(def db-spec {:subprotocol "mysql"
-              :subname "//localhost:3306/xxx"
-              :user "test"
-              :password "test"})
+(defn default-port [db-type]
+  (cond 
+    :mysql 3306
+    :oracle 1521
+    :mssql 1443))
 
-(def pool
-  (pool/make-datasource-spec db-spec))
+(defn build-connect-string [db-type host port database-name host user pwd]
+  (cond 
+    :mysql (format "//%s:%d/%s" host port database-name)
+    :oracle (format "thin:@%s:%d:%s" host port database-name)
+    :mssql (format "//%s:%p;database=%s;user=%s;password=%s" host port database-name user pwd)))
+
+(def db-spec (ref {}))
+
+
+(def db-spec-old {:subprotocol "mysql" 
+                   :subname "//localhost:3306/xxx"
+                   :user "test"
+                   :password "test"})
+
+(defn read-password []
+  (let [console (java.lang.System/console)
+        pwd (if console (.readPassword console "password:" nil) 
+              (do (print "password:") (flush) (read-line)))]
+    (apply str pwd)))
+
+(defn set-connection-arg 
+  "This parses the connection parameters"
+  [options]
+  (let [{:keys [db-type host port database-name user pwd]} options
+        pwd (if-not pwd (read-password) pwd)
+        port (if-not port (default-port db-type) port)]
+    (dosync (alter db-spec assoc 
+                   :subprotocol (name db-type) 
+                   :user user
+                   :password pwd
+                   :subname (build-connect-string db-type host port database-name host user pwd)))
+    (def pool (pool/make-datasource-spec @db-spec))))
+
+(defn set-and-test-connection [options]
+  (set-connection-arg options)
+  (let [{:keys [database-name host user]} options]
+    (try 
+      (with-open [con (sql/get-connection @db-spec)]
+        (log/info (format "Connecting to database %s on host %s with user %s" database-name host user))
+        true)
+      (catch ^java.sql.SQLException Exception e (log/error (str "Error connecting to database:" (.getMessage e)))))))
 
 (def stringish-field-types #{"VARCHAR" "CHAR" "TEXT"})
 
