@@ -8,7 +8,7 @@
          '[clojure.pprint :as pp]
          '[anon-valid.db :as db]
          '[clojure.term.colors :refer :all]
-         '[anon-valid.field-handler :as field-handler])
+         '[anon-valid.field-handler :as fh])
 
 ;; field filters
 (defn ff*stringish
@@ -50,13 +50,24 @@
       (doall 
         (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (pr-str (fields %1)))) (keys fields))))))
 
+(defn sample-field [con table field]
+  (filter #(or (integer? %) (not(empty? %))) (map :result (sql/query con (db/qb*sample-field table field)))))
+
 (defn sample-fields [con table fields]
-   (vector table (map #(vector % (map :result (sql/query con (db/qb*sample-field table %)))) 
-                      fields)))
+  (let [sample (map #(vector % (sample-field con table %)) fields)
+        non-empty-sample (filter #(> (count (% 1)) 0) sample)]
+    (if (not(empty? non-empty-sample)) (vector table non-empty-sample) ())))
 
 (defn sample-sensitive-fields []
   (log/info "Sampling sensitive fields")
   (sql/with-db-connection [con db/pool]
     (let [fields (sensitive-fields con)
-          field-values (map #(sample-fields con (key %) (val %)) fields)]
+          field-values (map #(sample-fields con (key %) (val %)) fields)
+          field-values (filter #(not(empty? %)) field-values)]
       (pp/pprint field-values))))
+
+;(defn sensitive-valued-fields []
+ ; (log/info "Fields containing sensitive values")
+  ;(sql/with-db-connection [con db/pool]
+   ; (let [fields 
+
