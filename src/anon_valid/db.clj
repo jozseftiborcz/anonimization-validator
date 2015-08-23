@@ -22,12 +22,6 @@
 
 (def db-spec (ref {}))
 
-
-(def db-spec-old {:subprotocol "mysql" 
-                   :subname "//localhost:3306/xxx"
-                   :user "test"
-                   :password "test"})
-
 (defn read-password []
   (let [console (java.lang.System/console)
         pwd (if console (.readPassword console "password:" nil) 
@@ -46,6 +40,13 @@
                    :password pwd
                    :subname (build-connect-string db-type host port database-name host user pwd)))
     (def pool (pool/make-datasource-spec @db-spec))))
+
+(defn test-pool []
+  (def pool (pool/make-datasource-spec {:subprotocol "mysql"
+                              :user "test"
+                              :password "test"
+                              :subname "//localhost:3306/xxx"
+                              })))
 
 (defn set-and-test-connection [options]
   (set-connection-arg options)
@@ -78,12 +79,18 @@
 (defn field-name [] 
   (map :column_name))
 
+(defn alphanum? [x] (re-matches #"\w+" x))
+
 ;; query builder
 (defmacro qb*row-count [table-name] 
   `[(str "select count(*) as result from " ~table-name)])
 
 (defmacro qb*non-empty-field-count [table-name field-name]
-  `[(str "select count(*) as result from " ~table-name " where ? is not null and ? != ''") ~field-name ~field-name])
+  `[(str "select count(*) as result from ~table-name where ? is not null and ? != ''") ~field-name ~field-name])
+
+(defn qb*sample-field [table-name field-name]
+  {:pre [(alphanum? table-name) (alphanum? field-name)]}
+  [(str "select distinct " field-name " as result from " table-name " where ? is not null and ? != '' limit 5") field-name field-name])
 
 ;; field selector
 (defmacro fs*length

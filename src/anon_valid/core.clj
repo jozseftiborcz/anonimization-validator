@@ -5,6 +5,7 @@
 (require '[clojure.java.jdbc :as sql] 
          '[clojure.tools.logging :as log] 
          '[jdbc.pool.c3p0 :as pool] 
+         '[clojure.pprint :as pp]
          '[anon-valid.db :as db]
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as field-handler])
@@ -31,14 +32,31 @@
       (printf "Number of non-empty tables: %d\n" (count non-zero-tables)))))
 
 (defn sensitive-fields 
-  ([] (sql/with-db-connection [con db/pool] (sensitive-fields con)))
+  ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields con))))
   ([con]
     (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))]
       (reduce #(assoc %1 (:table_name %2) (conj (%1 (:table_name %2)) (:column_name %2))) {} fields))))
   
+(defn sensitive-fields-alternative
+  ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields-alternative con))))
+  ([con]
+    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))]
+      (into {} (map #(vector (key %) (map :column_name (val %))) (group-by #(:table_name %) fields))))))
+
 (defn print-sensitive-fields []
   (log/info "Printing sensitive fields")
   (sql/with-db-connection [con db/pool]
     (let [fields (sensitive-fields con)]
       (doall 
-        (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (fields %1))) (keys fields))))))
+        (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (pr-str (fields %1)))) (keys fields))))))
+
+(defn sample-fields [con table fields]
+   (vector table (map #(vector % (map :result (sql/query con (db/qb*sample-field table %)))) 
+                      fields)))
+
+(defn sample-sensitive-fields []
+  (log/info "Sampling sensitive fields")
+  (sql/with-db-connection [con db/pool]
+    (let [fields (sensitive-fields con)
+          field-values (map #(sample-fields con (key %) (val %)) fields)]
+      (pp/pprint field-values))))

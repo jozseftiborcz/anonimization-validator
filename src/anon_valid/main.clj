@@ -14,8 +14,8 @@
 
 (def cli-options
   [["-h" "--help" "Print this help" :id :help]
-   ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "table-row-counts"
-    :validate-fn #(#{"table-row-counts" "sensitive-fields"} %)]
+   ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "sample-sensitive-fields"
+    :validate-fn #(#{"table-row-counts" "sensitive-fields" "sample-sensitive-fields"} %)]
    ["-d" "--db-name DATABASE_NAME" "Database or schema name" :id :database-name]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
    ["-t" "--db-type TYPE" "Type of database, default is mysql" :id :db-type :default :mysql
@@ -36,6 +36,11 @@
         "POSSIBLE COMMANDS"
         ""
         "table-row-counts     List non empty tables"
+        ""
+        "FORMATTING"
+        "pretty               pretty printing for human consumption"
+        "csv                  concise for post processing"
+        "ignore               to build ignore list"
         ""]
     (string/join \newline)))
 
@@ -51,7 +56,8 @@
 (defn execute-command [options]
   (case (:execute-command options) 
     "table-row-counts" (core/table-row-counts)
-    "sensitive-fields" (core/print-sensitive-fields)))
+    "sensitive-fields" (core/print-sensitive-fields)
+    "sample-sensitive-fields" (core/sample-sensitive-fields)))
 
 (defn -main
   "I don't do a whole lot ... yet."

@@ -17,14 +17,23 @@
 (def field-definitions
   (atom #{}))
 
+(def data-definitions
+  (atom #{}))
+
 (defn sensitive-fields
   [& args]
   (if (seq? args) 
     (swap! field-definitions #(apply conj %1 %2) args)))
 
+(defn sensitive-data
+  [& args]
+  (if (seq? args) 
+    (swap! data-definitions #(apply conj %1 %2) args)))
+
 (def not-nil? (complement nil?))
 
 (defn sensitive-field?
   [fld]
+  {:pre [(> (count @field-definitions) 0)]}
   (not-nil? (some #(re-find (re-pattern %) fld) @field-definitions)))
 
