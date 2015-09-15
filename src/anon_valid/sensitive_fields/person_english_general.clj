@@ -4,4 +4,5 @@
 
 (fh/sensitive-fields "name" "phone" "address" "card(?:_no)?" "birth" "family" "first_?name" "last_?name" "expiration_date" "CVC" )
 
-(fh/sensitive-data "visa" "password")
+(fh/sensitive-data "Sensitive #1" :like "visa" "password")
+(fh/sensitive-data "Sensitive #2" :exact "1234567890")

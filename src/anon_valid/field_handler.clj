@@ -18,7 +18,7 @@
   (atom #{}))
 
 (def data-definitions
-  (atom #{}))
+  (atom []))
 
 (defn sensitive-fields
   [& args]
@@ -26,9 +26,8 @@
     (swap! field-definitions #(apply conj %1 %2) args)))
 
 (defn sensitive-data
-  [& args]
-  (if (seq? args) 
-    (swap! data-definitions #(apply conj %1 %2) args)))
+  [data-name match-type & args]
+  (swap! data-definitions #(apply conj %1 [data-name match-type args])))
 
 (def not-nil? (complement nil?))
 
@@ -36,4 +35,10 @@
   [fld]
   {:pre [(> (count @field-definitions) 0)]}
   (not-nil? (some #(re-find (re-pattern %) fld) @field-definitions)))
+
+(defn data-max-length [values]
+  (max (map count values)))
+
+(defn data-min-length [values]
+  (min (map count values)))
 

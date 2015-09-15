@@ -19,13 +19,17 @@
   [len]
   `(filter #(> (:column_size %1) ~len)))
 
+(defn- full-table-name [table-def]
+  (let [{:keys [table_schem table_name]} table-def]
+    (if table_schem (str table_schem "." table_name) table_name)))
+
 (defn table-row-counts []
   (log/info "Printing table row counts")
   (sql/with-db-connection [con db/pool]
     (let [tables (db/get-tables con)
           data-tables (map #(assoc % :row_count
-                                   (:result (first (sql/query con (db/qb*row-count (:table_name %1)))))
-                                   ) tables)
+                                   (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name %1))))))) 
+                           tables)
           non-zero-tables (filter #(> (:row_count %) 0) data-tables)] 
       (doall 
         (map #(println (:table_name %1) (:row_count %1)) non-zero-tables))
@@ -51,7 +55,8 @@
         (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (pr-str (fields %1)))) (keys fields))))))
 
 (defn sample-field [con table field]
-  (filter #(or (integer? %) (not(empty? %))) (map :result (sql/query con (db/qb*sample-field table field)))))
+  (filter #(or (integer? %) (not(empty? %))) 
+          (map :result (sql/query con (db/qb*sample-field table field)))))
 
 (defn sample-fields [con table fields]
   (let [sample (map #(vector % (sample-field con table %)) fields)
@@ -66,8 +71,21 @@
           field-values (filter #(not(empty? %)) field-values)]
       (pp/pprint field-values))))
 
-;(defn sensitive-valued-fields []
- ; (log/info "Fields containing sensitive values")
-  ;(sql/with-db-connection [con db/pool]
-   ; (let [fields 
+(defn- map-table-fields-to-values [table-name]
+  nil)
+
+(defn- contains-sensitive-value? 
+  [con table-name]
+  (let [fields-with-values (map-table-fields-to-values table-name)
+        query-string (db/qb*sensitive-column table-name fields-with-values)
+        result (sql/query query-string)]
+    result))
+
+(defn sensitive-valued-tables 
+  []
+  (log/info "Printing table names containing sensitive data")
+  (sql/with-db-connection [con db/pool]
+    (let [tables (db/get-tables con) 
+          result (filter #(contains-sensitive-value? con (:table_name %)) tables)]
+      result)))
 

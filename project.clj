@@ -16,6 +16,7 @@
                                                     com.sun.jmdk/jmxtools
                                                     com.sun.jmx/jmxri]]
                  [com.mchange/c3p0 "0.9.5"]
+                 [local/ojdbc7 "12.1.0.2"]
                  [mysql/mysql-connector-java "5.1.6"]]
   :main ^:skip-aot anon-valid.main
   :target-path "target/%s"

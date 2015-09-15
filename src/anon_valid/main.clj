@@ -19,7 +19,8 @@
    ["-d" "--db-name DATABASE_NAME" "Database or schema name" :id :database-name]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
    ["-t" "--db-type TYPE" "Type of database, default is mysql" :id :db-type :default :mysql
-    :validate-fn #(#{:mysql :oracle :mssql} (keyword %))]
+    :parse-fn #(keyword %)
+    :validate-fn #(#{:mysql :oracle :mssql} %)]
    ["-P" "--password PASSWORD" "Database password, if not given asked from the command line" :id :pwd]
    ["-p" "--port PORT" "Database port, default is database type dependent" :id :port]
    ["-u" "--user USERNAME" "Database user" :id :user]
