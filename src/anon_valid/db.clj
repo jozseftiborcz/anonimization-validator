@@ -5,8 +5,12 @@
 (require '[clojure.java.jdbc :as sql] 
          '[clojure.tools.logging :as log] 
          '[jdbc.pool.c3p0 :as pool] 
+         '[clojure.string :as string]
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as fh])
+
+(def ^:dynamic *db-type* :mysql)
+(def ^:dynamic *result-set-limit* 5)
 
 (defn default-port [db-type]
   (case db-type 
@@ -34,7 +38,7 @@
               (do (print "password:") (flush) (read-line)))]
     (apply str pwd)))
 
-(def oracle? false)
+(defn oracle? [] (= *db-type* :oracle))
 
 (defn set-connection-arg 
   "This parses the connection parameters"
@@ -43,7 +47,7 @@
         pwd (if-not pwd (read-password) pwd)
         port (if-not port (default-port db-type) port)
         classname (db-driver db-type)]
-    (def oracle? (= db-type :oracle))
+    (def ^:dynamic *db-type* db-type)
     (dosync (alter db-spec assoc 
                    :subprotocol (name db-type) 
                    :classname classname
@@ -53,6 +57,7 @@
     (def pool (pool/make-datasource-spec @db-spec))))
 
 (defn test-orcl-pool []
+  (def ^:dynamic *db-type* :oracle)
   (def pool (pool/make-datasource-spec {:subprotocol "oracle"
                                         :user "dbtest"
                                         :password "dbtest"
@@ -87,7 +92,8 @@
    (if (or (string? con-or-table) (nil? con-or-table)) 
      (sql/with-db-connection [con pool] (doall (get-fields con con-or-table)))
      (get-fields con-or-table nil)))
-  ([con table] (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil))))
+  ([con table] 
+   (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil))))
 
 (defn table-name []
   (map :table_name))
@@ -100,18 +106,40 @@
 (defn alphanum? [x] (re-matches #"\w+" x))
 
 ;; query builder
-(defmacro qb*row-count [table-name] 
-  `[(str "select count(*) as result from " ~table-name)])
+(defn- qb*limit-result-set [select-stmt]
+  (case *db-type*
+    :mysql (str select-stmt " limit " *result-set-limit*)
+    :oracle (str "select * from (" select-stmt ") where rownum <= " *result-set-limit*)
+    :mssql select-stmt)) ;; TODO
 
-(defmacro qb*non-empty-field-count [table-name field-name]
-  `[(str "select count(*) as result from ~table-name where ? is not null and ? != ''") ~field-name ~field-name])
+(defn qb*row-count [table-name] 
+  [(str "select count(*) as result from " ~table-name)])
+
+(defn qb*non-empty-field-count [table-name field-name]
+  [(str "select count(*) as result from ~table-name where ? is not null and ? != ''") ~field-name ~field-name])
 
 (defn qb*sample-field [table-name field-name]
   {:pre [(alphanum? table-name) (alphanum? field-name)]}
-  [(str "select distinct " field-name " as result from " table-name " where ? is not null and ? != '' limit 5") field-name field-name])
+  [(qb*limit-result-set (str "select distinct " field-name " as result from " table-name " where ? is not null and ? != ''")) field-name field-name])
 
-(defmacro qb*sensitive-column [table-name fields-with-values]
-  [(str "select * from dual;")])
+(defn quote-field-values [match-type fv] 
+  (cond
+    (number? fv) fv
+    (coll? fv) (map #(quote-field-values match-type %) fv)
+    (string? fv) (case match-type
+                   :exact (str "'" fv "'")
+                   :like (str "'%" fv "%'"))
+    true (throw (Exception. (str "Invalid field type to quote" (type fv))))))
+
+(defn qb*verify-table-contains-sensitive-data [table-name fields-with-values]
+  (let [field-cond (fn [coll]
+                     (let [[field-name match-type & values] coll
+                           qfv (seq (quote-field-values match-type values))]
+                       (case match-type
+                         :exact (str field-name " in (" (string/join "," qfv) ")")
+                         :like (string/join " or " (map #(str "lower(" field-name ") like " %) qfv)))))
+        cond-str (string/join " or " (map field-cond fields-with-values))]
+  [(qb*limit-result-set (str "select * from " table-name " where " cond-str))]))
 
 ;; field selector
 (defmacro fs*length

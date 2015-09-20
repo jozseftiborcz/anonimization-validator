@@ -72,20 +72,20 @@
       (pp/pprint field-values))))
 
 (defn- map-table-fields-to-values [table-name]
-  nil)
+  [["city" :like "val1" "val2" "budap"]])
 
 (defn- contains-sensitive-value? 
   [con table-name]
   (let [fields-with-values (map-table-fields-to-values table-name)
-        query-string (db/qb*sensitive-column table-name fields-with-values)
-        result (sql/query query-string)]
-    result))
+        query-string (db/qb*verify-table-contains-sensitive-data table-name fields-with-values)
+        result (sql/query con query-string)]
+    (> (count result) 0)))
 
-(defn sensitive-valued-tables 
-  []
+(defn tables-with-sensitive-values []
   (log/info "Printing table names containing sensitive data")
   (sql/with-db-connection [con db/pool]
     (let [tables (db/get-tables con) 
+          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
           result (filter #(contains-sensitive-value? con (:table_name %)) tables)]
-      result)))
+      (pp/pprint result))))
 
