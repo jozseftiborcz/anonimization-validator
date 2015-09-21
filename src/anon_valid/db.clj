@@ -26,7 +26,7 @@
 
 (defn build-connect-string [db-type host port database-name host user pwd]
   (case db-type
-    :mysql (format "//%s:%d/%s" host port database-name)
+    :mysql (format "//%s:%d/%s?zeroDateTimeBehavior=convertToNull" host port database-name)
     :oracle (format "thin:@%s:%d/%s" host port database-name)
     :mssql (format "//%s:%p;database=%s;user=%s;password=%s" host port database-name user pwd)))
 
@@ -66,7 +66,7 @@
   (def pool (pool/make-datasource-spec {:subprotocol "mysql"
                                         :user "test"
                                         :password "test"
-                                        :subname "//localhost:3306/xxx"})))
+                                        :subname "//localhost:3306/xxx?zeroDateTimeBehavior=convertToNull"})))
 
 (defn set-and-test-connection [options]
   (set-connection-arg options)
@@ -78,7 +78,21 @@
         true)
       (catch ^java.sql.SQLException Exception e (log/error (str "Error connecting to database:" (.getMessage e)))))))
 
-(def stringish-field-types #{"VARCHAR" "CHAR" "TEXT"})
+(defn stringish? [value] 
+  (if (#{"VARCHAR" "VARCHAR2" "CHAR" "TEXT"} value) true false))
+
+(defn exact-table-name [table-def]
+  (let [{:keys [table_schem table_name]} table-def]
+    (case *db-type*
+      :oracle (str table_schem "." table_name)
+      :mysql table_name
+      :mssql table_name)))
+
+(defn quote-field-name[field-name]
+  (case *db-type*
+    :oracle (str """" field-name  """")
+    :mysql (str "`" field-name "`")
+    :mssql field-name))
 
 (defn get-tables 
   ([] (sql/with-db-connection [con pool] (doall (get-tables con))))
@@ -122,24 +136,19 @@
   {:pre [(alphanum? table-name) (alphanum? field-name)]}
   [(qb*limit-result-set (str "select distinct " field-name " as result from " table-name " where ? is not null and ? != ''")) field-name field-name])
 
-(defn quote-field-values [match-type fv] 
-  (cond
-    (number? fv) fv
-    (coll? fv) (map #(quote-field-values match-type %) fv)
-    (string? fv) (case match-type
-                   :exact (str "'" fv "'")
-                   :like (str "'%" fv "%'"))
-    true (throw (Exception. (str "Invalid field type to quote" (type fv))))))
-
 (defn qb*verify-table-contains-sensitive-data [table-name fields-with-values]
-  (let [field-cond (fn [coll]
-                     (let [[field-name match-type & values] coll
-                           qfv (seq (quote-field-values match-type values))]
-                       (case match-type
-                         :exact (str field-name " in (" (string/join "," qfv) ")")
-                         :like (string/join " or " (map #(str "lower(" field-name ") like " %) qfv)))))
-        cond-str (string/join " or " (map field-cond fields-with-values))]
-  [(qb*limit-result-set (str "select * from " table-name " where " cond-str))]))
+  (let [quote-one (fn [field-name [match-type fv]]
+                    (let [field-name (quote-field-name field-name)]
+                    (cond 
+                      (number? fv) (str field-name "=" fv)
+                      (string? fv) (str "lower(" field-name ")" 
+                                        (case match-type
+                                          :exact (str "='" fv "'")
+                                          :like (str " like '%" fv "%'"))))))
+        quote-spec (fn [[field-name & match-specs]]
+                     (string/join " or " (map #(quote-one field-name %) match-specs)))
+        cond-str (string/join " or " (map quote-spec fields-with-values))]
+    [(qb*limit-result-set (str "select * from " table-name " where " (apply str cond-str)))]))
 
 ;; field selector
 (defmacro fs*length

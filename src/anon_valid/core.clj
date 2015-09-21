@@ -10,15 +10,6 @@
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as fh])
 
-;; field filters
-(defn ff*stringish
-  []
-  (filter #(not (nil? (db/stringish-field-types (:type_name %1)))))) 
-
-(defmacro ff*min-length
-  [len]
-  `(filter #(> (:column_size %1) ~len)))
-
 (defn- full-table-name [table-def]
   (let [{:keys [table_schem table_name]} table-def]
     (if table_schem (str table_schem "." table_name) table_name)))
@@ -71,21 +62,28 @@
           field-values (filter #(not(empty? %)) field-values)]
       (pp/pprint field-values))))
 
-(defn- map-table-fields-to-values [table-name]
-  [["city" :like "val1" "val2" "budap"]])
+(defn map-table-fields-to-values [fields]
+  (let [values-for-field (fn [result-so-far field-def] 
+                           (if (db/stringish? (:type_name field-def))
+                             (if-let [filtered (fh/s-data*filter-max (:column_size field-def))] 
+                               (conj result-so-far (conj filtered (:column_name field-def))))))] 
+    (remove nil? (reduce values-for-field () fields))))
 
 (defn- contains-sensitive-value? 
-  [con table-name]
-  (let [fields-with-values (map-table-fields-to-values table-name)
-        query-string (db/qb*verify-table-contains-sensitive-data table-name fields-with-values)
-        result (sql/query con query-string)]
-    (> (count result) 0)))
+  [con table-def]
+  (if-let [fields-with-values (map-table-fields-to-values (db/get-fields con (:table_name table-def)))]
+    (if (empty? fields-with-values)
+      (log/info (str "Skipping table " (db/exact-table-name table-def)))
+      (let [query-string (db/qb*verify-table-contains-sensitive-data (db/exact-table-name table-def) fields-with-values)
+;;            xxx (println query-string)
+            result (sql/query con query-string)]
+          (> (count result) 0)))))
 
 (defn tables-with-sensitive-values []
   (log/info "Printing table names containing sensitive data")
   (sql/with-db-connection [con db/pool]
     (let [tables (db/get-tables con) 
-          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
-          result (filter #(contains-sensitive-value? con (:table_name %)) tables)]
+;;          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
+          result (filter #(contains-sensitive-value? con %) tables)]
       (pp/pprint result))))
 

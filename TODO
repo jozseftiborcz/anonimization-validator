@@ -1,2 +1,5 @@
 - option -g --generate to generate anonimization script 
 - use encrypted sensitive data sample
+- option --gui: interactive tracking of script run
+- invariant check: sensitive-data values for a name should have identical type (eg. string, int)
+- sensitive-data min length is not calculated correctly if regexp used

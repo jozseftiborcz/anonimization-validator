@@ -14,31 +14,41 @@
 (defn load-definitions []
   (apply require (b/namespaces-on-classpath :prefix "anon-valid.sensitive-fields")))
 
-(def field-definitions
+(def s-fields
   (atom #{}))
 
-(def data-definitions
-  (atom []))
+(def s-data
+  (atom {}))
 
 (defn sensitive-fields
   [& args]
   (if (seq? args) 
-    (swap! field-definitions #(apply conj %1 %2) args)))
+    (swap! s-fields #(apply conj %1 %2) args)))
 
 (defn sensitive-data
   [data-name match-type & args]
-  (swap! data-definitions #(apply conj %1 [data-name match-type args])))
+  (let [mt-args (flatten (map vector (repeat match-type) args))
+        old-args (@s-data data-name)] 
+    (swap! s-data assoc data-name (concat old-args mt-args))))
 
 (def not-nil? (complement nil?))
 
 (defn sensitive-field?
   [fld]
-  {:pre [(> (count @field-definitions) 0)]}
-  (not-nil? (some #(re-find (re-pattern %) fld) @field-definitions)))
+  {:pre [(> (count @s-fields) 0)]}
+  (not-nil? (some #(re-find (re-pattern %) fld) @s-fields)))
 
-(defn data-max-length [values]
-  (max (map count values)))
+;;(defn s-data-length []
+;;  (map s-data*min-length (keys s-data)))
 
-(defn data-min-length [values]
-  (min (map count values)))
 
+(defn s-data*filter-max 
+  ([data-name max-length] 
+   (let [result (filter #(<= (count (second %)) max-length) (partition 2 (@s-data data-name)))]
+     (if (empty? result) nil result)))
+  ([max-length]
+   (let [result (apply concat (map #(s-data*filter-max % max-length) (keys @s-data)))]
+     (if (empty? result) nil result))))
+
+;;(defn s-data*min-length [data-name]
+;;  (min (map count (remove keyword? (@s-data data-name)))))
