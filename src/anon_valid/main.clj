@@ -54,12 +54,21 @@
   (if msg (println msg))
   (System/exit status))
 
+(defn print-tables-with-sensitive-values[]
+  (let [progress-fn (fn[stage & args]
+                      (let [table-spec (first args)]
+                        (case stage
+                          :start (println "searching for tables containing sensitive data")
+                          :not-sensitive (println "table " (:table_name table-spec) " is anonim")
+                          :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
+    (core/tables-with-sensitive-values progress-fn)))
+
 (defn execute-command [options]
   (case (:execute-command options) 
     "table-row-counts" (core/table-row-counts)
     "sensitive-fields" (core/print-sensitive-fields)
     "sample-sensitive-fields" (core/sample-sensitive-fields)
-    (list "tables-with-sensitive-values" "twsv") (core/tables-with-sensitive-values)))
+    (list "tables-with-sensitive-values" "twsv") (print-tables-with-sensitive-values)))
 
 (defn -main
   "I don't do a whole lot ... yet."

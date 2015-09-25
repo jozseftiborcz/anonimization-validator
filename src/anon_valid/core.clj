@@ -71,19 +71,39 @@
 
 (defn- contains-sensitive-value? 
   [con table-def]
-  (if-let [fields-with-values (map-table-fields-to-values (db/get-fields con (:table_name table-def)))]
-    (if (empty? fields-with-values)
-      (log/info (str "Skipping table " (db/exact-table-name table-def)))
+  (let [fields (db/get-fields con (:table_name table-def))
+        fields-with-values (map-table-fields-to-values (db/get-fields con (:table_name table-def)))]
+    (if-not (empty? fields-with-values)
       (let [query-string (db/qb*verify-table-contains-sensitive-data (db/exact-table-name table-def) fields-with-values)
-;;            xxx (println query-string)
+            ;;      xxx (println query-string)
             result (sql/query con query-string)]
-          (> (count result) 0)))))
+        (> (count result) 0)))))
 
-(defn tables-with-sensitive-values []
-  (log/info "Printing table names containing sensitive data")
-  (sql/with-db-connection [con db/pool]
-    (let [tables (db/get-tables con) 
-;;          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
-          result (filter #(contains-sensitive-value? con %) tables)]
-      (pp/pprint result))))
+(defn- nil-progress [stage & args] nil)
+
+(defn tables-with-sensitive-values 
+  ([progress-fn]
+   (progress-fn :start)
+   (sql/with-db-connection [con db/pool]
+     (let [tables (db/get-tables con) 
+           ;;          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
+           table-filter (fn[table-def] 
+                          (if (contains-sensitive-value? con table-def)
+                            (do (progress-fn :sensitive table-def) true)
+                            (do (progress-fn :not-sensitive table-def) false)))
+           result (filter table-filter tables)]
+       (doall result))))
+  ([]
+   (tables-with-sensitive-values nil-progress)))
+
+(defn fields-with-sensitive-values
+  ([progress-fn table-def] 
+   )
+  ([progress-fn table-def & tables]
+   (sql/with-db-connection [con db/pool]
+   ))
+  ([table-def]
+   (fields-with-sensitive-values nil-progress table-def)))
+
+
 
