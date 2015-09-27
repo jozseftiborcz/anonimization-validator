@@ -127,10 +127,10 @@
     :mssql select-stmt)) ;; TODO
 
 (defn qb*row-count [table-name] 
-  [(str "select count(*) as result from " ~table-name)])
+  [(str "select count(*) as result from " table-name)])
 
 (defn qb*non-empty-field-count [table-name field-name]
-  [(str "select count(*) as result from ~table-name where ? is not null and ? != ''") ~field-name ~field-name])
+  [(str "select count(*) as result from ~table-name where ? is not null and ? != ''") field-name field-name])
 
 (defn qb*sample-field [table-name field-name]
   {:pre [(alphanum? table-name) (alphanum? field-name)]}

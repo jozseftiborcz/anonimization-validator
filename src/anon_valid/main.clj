@@ -4,6 +4,7 @@
 
 (require '[clojure.tools.logging :as log] 
          '[clojure.term.colors :refer :all]
+         '[clojure.pprint :as pp]
          '[anon-valid.field-handler :as fh]
          '[clojure.string :as string]
          '[clojure.tools.cli :as cli]
@@ -12,10 +13,29 @@
 
 (def version "0.0.2")
 
+(def commands (atom []))
+(def short-command-names (atom {}))
+
+(defmacro __symbol-to-string[s] `(str '~s))
+(defmacro command [cmd-short-name cmd-long-name cmd-doc & body] 
+  `(do
+     (defn ~cmd-long-name [] ~@body) 
+     (alter-meta! (resolve '~cmd-long-name) assoc :short-command-name '~cmd-short-name :doc ~cmd-doc) 
+     (swap! commands conj (resolve '~cmd-long-name))
+     (swap! short-command-names assoc '~cmd-short-name ~cmd-long-name)))
+
+(defn command-list[]
+  (apply str (map #(format "  %-30s %s\n" 
+                           (str (:name (meta %)) " (" (:short-command-name (meta %)) ")") 
+                           (:doc (meta %))) @commands)))
+
+(defn command-names[]
+  (reduce #(conj %1 (str (:name (meta %2))) (str (:short-command-name (meta %2)))) #{} @commands))
+
 (def cli-options
   [["-h" "--help" "Print this help" :id :help]
    ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "sample-sensitive-fields"
-    :validate-fn #(#{"table-row-counts" "sensitive-fields" "sample-sensitive-fields" "tables-with-sensitive-values" "twsv"} %)]
+    :validate-fn #((command-names) %)]
    ["-d" "--db-name DATABASE_NAME" "Database or schema name" :id :database-name]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
    ["-t" "--db-type TYPE" "Type of database, default is mysql" :id :db-type :default :mysql
@@ -36,7 +56,7 @@
         ""
         "POSSIBLE COMMANDS"
         ""
-        "table-row-counts     List non empty tables"
+        (command-list)
         ""
         "FORMATTING"
         "pretty               pretty printing for human consumption"
@@ -54,21 +74,47 @@
   (if msg (println msg))
   (System/exit status))
 
-(defn print-tables-with-sensitive-values[]
+(command sf scan-fields "Searching for fields with sensitive content"
+  (let [progress-fn (fn[stage & args]
+                      (let [table-spec (first args)]
+                        (case stage
+                          :start (println "searching for fields containing sensitive data")
+                          :not-sensitive (println "table " (:table_name table-spec) " is anonim")
+                          :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
+    (pp/pprint core/scan-for-fields-with-sensitive-values progress-fn)))
+
+(command st sensitive-tables "Searching for tables with sensitive content"
   (let [progress-fn (fn[stage & args]
                       (let [table-spec (first args)]
                         (case stage
                           :start (println "searching for tables containing sensitive data")
                           :not-sensitive (println "table " (:table_name table-spec) " is anonim")
                           :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
-    (core/tables-with-sensitive-values progress-fn)))
+    (pp/pprint (core/tables-with-sensitive-values progress-fn))))
+
+(command trc row-counts "Count the number of rows in tables"
+  (let [progress-fn (fn[stage & args]
+                      (let [table-spec (first args)]
+                        (case stage
+                          :start (println "searching for tables containing sensitive data")
+                          :not-sensitive (println "table " (:table_name table-spec) " is anonim")
+                          :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
+    (core/table-row-counts)))
+
+(command sat sample-tables "Sample suspected fields of tables"
+  (let [progress-fn (fn[stage & args]
+                      (let [table-spec (first args)]
+                        (case stage
+                          :start (println "searching for tables containing sensitive data")
+                          :not-sensitive (println "table " (:table_name table-spec) " is anonim")
+                          :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
+    (core/sample-sensitive-fields)))
 
 (defn execute-command [options]
-  (case (:execute-command options) 
-    "table-row-counts" (core/table-row-counts)
-    "sensitive-fields" (core/print-sensitive-fields)
-    "sample-sensitive-fields" (core/sample-sensitive-fields)
-    (list "tables-with-sensitive-values" "twsv") (print-tables-with-sensitive-values)))
+  (let [cmd-name (symbol (:execute-command options))]
+    ((first (filter #(let [m-cmd (meta %)]
+                    (or (= cmd-name (:name m-cmd))
+                        (= cmd-name (:short-command-name m-cmd)))) @commands)))))
 
 (defn -main
   "I don't do a whole lot ... yet."

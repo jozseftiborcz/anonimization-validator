@@ -72,7 +72,7 @@
 (defn- contains-sensitive-value? 
   [con table-def]
   (let [fields (db/get-fields con (:table_name table-def))
-        fields-with-values (map-table-fields-to-values (db/get-fields con (:table_name table-def)))]
+        fields-with-values (map-table-fields-to-values fields)]
     (if-not (empty? fields-with-values)
       (let [query-string (db/qb*verify-table-contains-sensitive-data (db/exact-table-name table-def) fields-with-values)
             ;;      xxx (println query-string)
@@ -96,14 +96,16 @@
   ([]
    (tables-with-sensitive-values nil-progress)))
 
-(defn fields-with-sensitive-values
-  ([progress-fn table-def] 
-   )
-  ([progress-fn table-def & tables]
+(defn- scan-one-for-fields
+  [progress-fn con table-def] 
+     {:a 1})
+
+(defn scan-for-fields-with-sensitive-values
+  ([progress-fn & table-defs]
    (sql/with-db-connection [con db/pool]
-   ))
+     (map #(scan-one-for-fields progress-fn con %) table-defs)))
   ([table-def]
-   (fields-with-sensitive-values nil-progress table-def)))
+   (scan-for-fields-with-sensitive-values nil-progress table-def)))
 
 
 
