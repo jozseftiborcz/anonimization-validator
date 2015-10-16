@@ -82,6 +82,7 @@
   (if (#{"VARCHAR" "VARCHAR2" "CHAR" "TEXT"} value) true false))
 
 (defn exact-table-name [table-def]
+  "Returns a fully specified table name definition. It works both for field and table definitions."
   (let [{:keys [table_schem table_name]} table-def]
     (case *db-type*
       :oracle (str table_schem "." table_name)

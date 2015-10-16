@@ -12,7 +12,7 @@
 (require '[bultitude.core :as b])
 
 (defn load-definitions []
-  (apply require (b/namespaces-on-classpath :prefix "anon-valid.sensitive-fields")))
+  (apply require (cons :reload-all (b/namespaces-on-classpath :prefix "anon-valid.sensitive-fields"))))
 
 (def s-fields
   (atom #{}))
@@ -41,14 +41,24 @@
 ;;(defn s-data-length []
 ;;  (map s-data*min-length (keys s-data)))
 
-
-(defn s-data*filter-max 
+(defn s-data*data-names-by-max
+  "Returns data names which contains sensitive data definition of which length is up to max."
   ([data-name max-length] 
    (let [result (filter #(<= (count (second %)) max-length) (partition 2 (@s-data data-name)))]
-     (if (empty? result) nil result)))
+     (if (empty? result) nil data-name)))
   ([max-length]
-   (let [result (apply concat (map #(s-data*filter-max % max-length) (keys @s-data)))]
+   (let [result (map #(s-data*data-names-by-max % max-length) (keys @s-data))]
+     (remove nil? result))))
+
+(defn s-data*filter-values-by-max
+  "Returns a seq of sensitive values not longer than max-length. 
+  If data-name is nil the function behaves as if called with max-length parameter only."
+  ([data-name max-length]
+   (if data-name
+     (let [result (filter #(<= (count (second %)) max-length) (partition 2 (@s-data data-name)))]
+       (if (empty? result) nil result))
+     (s-data*filter-values-by-max max-length)))
+  ([max-length]
+   (let [result (apply concat (map #(s-data*filter-values-by-max % max-length) (keys @s-data)))]
      (if (empty? result) nil result))))
 
-;;(defn s-data*min-length [data-name]
-;;  (min (map count (remove keyword? (@s-data data-name)))))

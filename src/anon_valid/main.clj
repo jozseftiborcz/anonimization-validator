@@ -14,17 +14,14 @@
 (def version "0.0.2")
 
 (def commands (atom []))
-(def short-command-names (atom {}))
 
-(defmacro __symbol-to-string[s] `(str '~s))
 (defmacro command [cmd-short-name cmd-long-name cmd-doc & body] 
   `(do
      (defn ~cmd-long-name [] ~@body) 
      (alter-meta! (resolve '~cmd-long-name) assoc :short-command-name '~cmd-short-name :doc ~cmd-doc) 
-     (swap! commands conj (resolve '~cmd-long-name))
-     (swap! short-command-names assoc '~cmd-short-name ~cmd-long-name)))
+     (swap! commands conj (resolve '~cmd-long-name))))
 
-(defn command-list[]
+(defn command-descriptions[]
   (apply str (map #(format "  %-30s %s\n" 
                            (str (:name (meta %)) " (" (:short-command-name (meta %)) ")") 
                            (:doc (meta %))) @commands)))
@@ -56,7 +53,7 @@
         ""
         "POSSIBLE COMMANDS"
         ""
-        (command-list)
+        (command-descriptions)
         ""
         "FORMATTING"
         "pretty               pretty printing for human consumption"
@@ -75,13 +72,10 @@
   (System/exit status))
 
 (command sf scan-fields "Searching for fields with sensitive content"
-  (let [progress-fn (fn[stage & args]
-                      (let [table-spec (first args)]
-                        (case stage
-                          :start (println "searching for fields containing sensitive data")
-                          :not-sensitive (println "table " (:table_name table-spec) " is anonim")
-                          :sensitive (println (red "table " (:table_name table-spec) " is not anonim")))))]
-    (pp/pprint core/scan-for-fields-with-sensitive-values progress-fn)))
+  (let [progress-fn (fn[field-spec & sensitive-classes]
+                      (println field-spec))]
+    (println "searching for fields containing sensitive data")
+    (pp/pprint (core/scan-for-fields-with-sensitive-values progress-fn))))
 
 (command st sensitive-tables "Searching for tables with sensitive content"
   (let [progress-fn (fn[stage & args]

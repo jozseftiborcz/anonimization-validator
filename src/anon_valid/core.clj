@@ -62,50 +62,87 @@
           field-values (filter #(not(empty? %)) field-values)]
       (pp/pprint field-values))))
 
-(defn map-table-fields-to-values [fields]
-  (let [values-for-field (fn [result-so-far field-def] 
-                           (if (db/stringish? (:type_name field-def))
-                             (if-let [filtered (fh/s-data*filter-max (:column_size field-def))] 
-                               (conj result-so-far (conj filtered (:column_name field-def))))))] 
-    (remove nil? (reduce values-for-field () fields))))
-
+(defn map-fields-to-values 
+  "Maps a list of fileds to possible sensitive values. If data-name is given only sensitive values from that 
+  data name is used."
+  ([data-name fields]
+   (let [values-for-field (fn [result-so-far field-def] 
+                            (if (db/stringish? (:type_name field-def))
+                              (if-let [filtered (fh/s-data*filter-values-by-max data-name (:column_size field-def))] 
+                                (conj result-so-far (conj filtered (:column_name field-def)))
+                              result-so-far)
+                             result-so-far))] 
+     (remove nil? (reduce values-for-field () fields))))
+  ([fields]
+   (map-fields-to-values nil fields)))
+                                    
+(defn map-fields-with-data-names
+  "Creates a seq of (field data-name) pairs suitable for data matching."
+  [fields]
+  (let [pair-fn (fn [result-so-far field-def] 
+                  (if (db/stringish? (:type_name field-def))
+                    (if-let [filtered (fh/s-data*data-names-by-max (:column_size field-def))] 
+                      (apply conj result-so-far (map vector (repeat field-def) filtered))
+                      result-so-far)
+                    result-so-far))] 
+    (remove nil? (reduce pair-fn () fields))))
+  
 (defn- contains-sensitive-value? 
   [con table-def]
   (let [fields (db/get-fields con (:table_name table-def))
-        fields-with-values (map-table-fields-to-values fields)]
+        fields-with-values (map-fields-to-values fields)]
     (if-not (empty? fields-with-values)
       (let [query-string (db/qb*verify-table-contains-sensitive-data (db/exact-table-name table-def) fields-with-values)
-            ;;      xxx (println query-string)
+;;                  xxx (println query-string)
             result (sql/query con query-string)]
         (> (count result) 0)))))
 
 (defn- nil-progress [stage & args] nil)
 
+(defn debug-progress [ & args] (prn args))
+
 (defn tables-with-sensitive-values 
-  ([progress-fn]
+  ([con progress-fn]
    (progress-fn :start)
+   (let [tables (db/get-tables con) 
+;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
+         table-filter (fn[table-def] 
+                        (if (contains-sensitive-value? con table-def)
+                          (do (progress-fn :sensitive table-def) true)
+                          (do (progress-fn :not-sensitive table-def) false)))
+         result (filter table-filter tables)]
+     result))
+  ([progress-fn]
    (sql/with-db-connection [con db/pool]
-     (let [tables (db/get-tables con) 
-           ;;          tables (filter #(= (:table_name %) "CUSTOMERS") tables)
-           table-filter (fn[table-def] 
-                          (if (contains-sensitive-value? con table-def)
-                            (do (progress-fn :sensitive table-def) true)
-                            (do (progress-fn :not-sensitive table-def) false)))
-           result (filter table-filter tables)]
-       (doall result))))
+                           (doall (tables-with-sensitive-values con progress-fn))))
   ([]
    (tables-with-sensitive-values nil-progress)))
 
-(defn- scan-one-for-fields
-  [progress-fn con table-def] 
-     {:a 1})
+(defn scan-one-for-fields-with-sensitive-values
+  [con progress-fn table-def] 
+  (let [fields (db/get-fields con (:table_name table-def))
+        flds-data-name (map-fields-with-data-names fields)
+        field-scan-fn (fn[field data-name] 
+                        (let [field-with-values (map-fields-to-values data-name (list field))
+                              query-string (db/qb*verify-table-contains-sensitive-data 
+                                             (db/exact-table-name table-def) 
+                                             field-with-values)]
+                          (if-not (empty? field-with-values) 
+                            (> (count (sql/query con query-string)) 0)
+                            false)))
+        map-fn (fn[[field data-name :as fld-data-name]]
+                 (if (field-scan-fn field data-name)
+                   (do (progress-fn (db/exact-table-name field) (:column_name field) data-name) fld-data-name)))]
+  (doall (remove nil? (map map-fn flds-data-name)))))
 
 (defn scan-for-fields-with-sensitive-values
-  ([progress-fn & table-defs]
+  ([progress-fn table-finder-fn]
    (sql/with-db-connection [con db/pool]
-     (map #(scan-one-for-fields progress-fn con %) table-defs)))
-  ([table-def]
-   (scan-for-fields-with-sensitive-values nil-progress table-def)))
+     (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con progress-fn)))))
+  ([progress-or-table-def]
+   (if (fn? progress-or-table-def)
+     (scan-for-fields-with-sensitive-values progress-or-table-def tables-with-sensitive-values)
+     (scan-for-fields-with-sensitive-values nil-progress (fn[& args] progress-or-table-def)))))
 
 
 
