@@ -72,10 +72,9 @@
   (System/exit status))
 
 (command sf scan-fields "Searching for fields with sensitive content"
-  (let [progress-fn (fn[field-spec & sensitive-classes]
-                      (println field-spec))]
+  (let [progress-fn (fn [ & args] (println args))]
     (println "searching for fields containing sensitive data")
-    (pp/pprint (core/scan-for-fields-with-sensitive-values progress-fn))))
+    (core/scan-for-fields-with-sensitive-values progress-fn)))
 
 (command st sensitive-tables "Searching for tables with sensitive content"
   (let [progress-fn (fn[stage & args]

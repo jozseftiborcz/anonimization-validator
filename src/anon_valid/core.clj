@@ -103,13 +103,13 @@
 
 (defn tables-with-sensitive-values 
   ([con progress-fn]
-   (progress-fn :start)
+   (progress-fn :start (db/table-count))
    (let [tables (db/get-tables con) 
 ;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
          table-filter (fn[table-def] 
                         (if (contains-sensitive-value? con table-def)
-                          (do (progress-fn :sensitive table-def) true)
-                          (do (progress-fn :not-sensitive table-def) false)))
+                          (do (progress-fn :sensitive-table (db/exact-table-name table-def)) true)
+                          (do (progress-fn :not-sensitive-table (db/exact-table-name table-def)) false)))
          result (filter table-filter tables)]
      result))
   ([progress-fn]
@@ -132,10 +132,16 @@
                             false)))
         map-fn (fn[[field data-name :as fld-data-name]]
                  (if (field-scan-fn field data-name)
-                   (do (progress-fn (db/exact-table-name field) (:column_name field) data-name) fld-data-name)))]
+                   (do (progress-fn :sensitive-field (db/exact-table-name field) (:column_name field) data-name) fld-data-name)))]
   (doall (remove nil? (map map-fn flds-data-name)))))
 
 (defn scan-for-fields-with-sensitive-values
+  "Scans database for table fields with sensitive values.
+  progress-fn is called at the following stages of the scan:
+  * :start table-count - at the beginning of scan returning the number of tables.
+  * :sensitive-table table-name - the table contains sensitive data
+  * :not-sensitive-table table-name - the table doesn't contain sensitive data
+  * :sensitive-field table-name field-name data-name (examples...) - table's field contains values from data name (plus some examples)"
   ([progress-fn table-finder-fn]
    (sql/with-db-connection [con db/pool]
      (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con progress-fn)))))
