@@ -7,6 +7,7 @@
          '[jdbc.pool.c3p0 :as pool] 
          '[clojure.pprint :as pp]
          '[anon-valid.db :as db]
+         '[clojure.string :as string]
          '[clojure.term.colors :refer :all]
          '[anon-valid.field-handler :as fh])
 
@@ -119,6 +120,7 @@
    (tables-with-sensitive-values nil-progress)))
 
 (defn scan-one-for-fields-with-sensitive-values
+  "Scans one table for sensitive fields"
   [con progress-fn table-def] 
   (let [fields (db/get-fields con (:table_name table-def))
         flds-data-name (map-fields-with-data-names fields)
@@ -128,11 +130,21 @@
                                              (db/exact-table-name table-def) 
                                              field-with-values)]
                           (if-not (empty? field-with-values) 
-                            (> (count (sql/query con query-string)) 0)
-                            false)))
+                            (sql/query con query-string))))
         map-fn (fn[[field data-name :as fld-data-name]]
-                 (if (field-scan-fn field data-name)
-                   (do (progress-fn :sensitive-field (db/exact-table-name field) (:column_name field) data-name) fld-data-name)))]
+                 (let [result (field-scan-fn field data-name)
+                       ;;result-fn (fn [x] (map #(str "'" % "'") (distinct (map (keyword (string/lower-case (:column_name field))) x))))] 
+                       result-fn (fn [x] (->> 
+                                           x
+                                           (map (keyword (string/lower-case (:column_name field)))) 
+                                           distinct 
+                                           (map #(str "'" % "'"))))]
+                   (if (> (count result) 0)
+                     (do (progress-fn 
+                           :sensitive-field 
+                           (db/exact-table-name field) 
+                           (:column_name field) data-name (result-fn result)) 
+                       fld-data-name))))]
   (doall (remove nil? (map map-fn flds-data-name)))))
 
 (defn scan-for-fields-with-sensitive-values
