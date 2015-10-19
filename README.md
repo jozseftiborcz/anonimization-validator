@@ -1,14 +1,16 @@
 # anon-valid
 
-FIXME: description
+Anonimization validator is a program to check if database contains sensitive data. It is designed to easily scan and analize large databases. 
+
+anon-valid scans the database via a JDBC connection. Currently it supports oracle, mssql and mysql databases.
 
 ## Installation
 
-Download from http://example.com/FIXME.
+Download from https://github.com/jozseftiborcz/anonimization-validator
 
 ## Usage
 
-FIXME: explanation
+Program can be started with the following options. It requires java 1.6 or greater (as Clojure). 
 
     $ java -jar anon-valid-0.1.0-standalone.jar [args]
 
@@ -16,21 +18,12 @@ FIXME: explanation
 
 FIXME: listing of options this app accepts.
 
-## Examples
-
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
+## Features
+* Detection of sensitive field candiates in Hungarian and English based on field names.
+* Sensitive field discovery based on column content.
 
 ## License
 
-Copyright © 2015 FIXME
+Copyright © 2015 József Tiborcz 
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Distributed under the Eclipse Public License, the same as Clojure uses. See the file LICENSE.
