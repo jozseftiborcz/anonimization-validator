@@ -1,15 +1,14 @@
 (ns anon-valid.main
   (:gen-class)
-  (:import com.mchange.v2.c3p0.ComboPooledDataSource))
-
-(require '[clojure.tools.logging :as log] 
-         '[clojure.term.colors :refer :all]
-         '[clojure.pprint :as pp]
-         '[anon-valid.field-handler :as fh]
-         '[clojure.string :as string]
-         '[clojure.tools.cli :as cli]
-         '[anon-valid.core :as core]
-         '[anon-valid.db :as db])
+  (:import com.mchange.v2.c3p0.ComboPooledDataSource)
+  (:require [clojure.tools.logging :as log] 
+            [clojure.term.colors :refer :all]
+            [clojure.pprint :as pp]
+            [anon-valid.field-handler :as fh]
+            [clojure.string :as string]
+            [clojure.tools.cli :as cli]
+            [anon-valid.core :as core]
+            [anon-valid.db :as db]))
 
 (def version "0.0.2")
 
@@ -34,6 +33,8 @@
    ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "sample-sensitive-fields"
     :validate-fn #((command-names) %)]
    ["-d" "--db-name DATABASE_NAME" "Database or schema name" :id :database-name]
+   ["-D" "--data-file DATA_FILE_OR_DIRECTORY" "Loads sensitive data definitions from file or directory" :id :data-file ]
+   ["-c" "--cache CACHE" "Loads cached result from file. Program will overwrite the cache with the result. A backup is created in .bkp file." :id :cache-file ]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
    ["-t" "--db-type TYPE" "Type of database, default is mysql" :id :db-type :default :mysql
     :parse-fn #(keyword %)
@@ -114,7 +115,6 @@
   [& args]
 
   (log/info "Hello, World!")
-  (fh/load-definitions)
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (cond
       (or (:help options) (nil? (:execute-command options))) (exit 0 (usage summary))
@@ -122,8 +122,9 @@
       (nil? (:user options)) (exit 1 "Missing user name for connection")
       (nil? (:database-name options)) (exit 1 "Missing schema name")
       (not (db/set-and-test-connection options)) (exit 1 ""))
+    (if (:data-file options) 
+      (do (when-not (fh/load-sdata (:data-file options))
+            (exit 1 "Error parsing file " (:data-file options))))
+      (do (log/info "Loading standard definitions...")
+        (fh/load-definitions)))
     (execute-command options)))
-;  (log/info (db/tables-with-sensitive-fields))
-  ;(println (sql/query connect-db ["select * from jos_vm_module"]))
-  ;(log/info (core/get-tables))
-  ;(log/info (map :column_name (core/get-fields "jos_vm_product")))

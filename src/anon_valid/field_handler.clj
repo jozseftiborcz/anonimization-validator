@@ -7,12 +7,53 @@
 ;; By using this software in any fashion, you are agreeing to be
 ;; bound by the terms of this license.  You must not remove this
 ;; notice, or any other, from this software.
-(ns anon-valid.field-handler)
+(ns anon-valid.field-handler
+  (:require [bultitude.core :as b]
+            [clojure.string :as s]
+            [clojure.tools.logging :as log] 
+            [clojure.java.io :as io])
+  (:import (java.io PushbackReader)))
 
-(require '[bultitude.core :as b])
-
-(defn load-definitions []
+(defn load-definitions 
+  "Loads definition from standard namespace"
+  []
   (apply require (cons :reload-all (b/namespaces-on-classpath :prefix "anon-valid.sensitive-fields"))))
+
+; forms allowed in an sdata file
+(def sdata-file-forms #{'sensitive-data 'sensitive-fields}) 
+
+(defn- check-sdata-forms
+  ([rdr]
+    (let [f (read rdr false ::done)]
+      (if (and (list? f) (= 'sdata-definition (first f)))
+        (check-sdata-forms rdr true)
+        (do
+          (log/error "Invalid form " f)
+          (log/error "Expected (sdata-definition \"coll-name\")")
+          false))))
+  ([rdr no-header]
+    (let [f (read rdr false ::done)]
+      (if (= ::done f) 
+        true
+        (if (and (list? f) (sdata-file-forms (first f)))
+          (recur rdr true)
+          (do (log/error "Expected one of" (s/join "," sdata-file-forms "got" f)) false))))))
+
+(defn check-sdata-file
+  "Checks if the file is a valid sdata definition"
+  [file-name]
+  (with-open [r (PushbackReader. (io/reader file-name))]
+    (check-sdata-forms r)))
+      
+(defn load-sdata 
+  "Loads and evaluate an sdata file"
+  [file-or-dir]
+  (if (check-sdata-file file-or-dir)
+    (let [ns-str (str "(ns anon-valid.sdata." (.getName (io/file file-or-dir)) ")")
+          require-str (str "(use 'anon-valid.field-handler)")]
+      (load-string (str ns-str require-str (slurp file-or-dir)))
+      true)
+    false))
 
 (def s-fields
   (atom #{}))
@@ -20,12 +61,25 @@
 (def s-data
   (atom {}))
 
+(def ^:dynamic *sdata-coll* nil) ;; actual sdata collection 
+
+(defn sdata-definition
+  "Namespace of data collection definitions. It must be the first non-comment form of sdata files."
+  [coll-name & args ]
+  (def ^:dynamic *sdata-coll* coll-name)
+  (let [version (:version (apply hash-map args))
+        version (if version (str " (version " version ")") "")]
+    (log/info (str "loading sdata '" coll-name "'" version "..."))))
+
 (defn sensitive-fields
+  "Defines field name patterns suspected containing sensitive data."
   [& args]
   (if (seq? args) 
     (swap! s-fields #(apply conj %1 %2) args)))
 
 (defn sensitive-data
+  "This defines a class of sensitive data to search for. Data-name is the name of the class as will be reported in 
+  hits. Match-type defines the method as values will be compared to actual field values."
   [data-name match-type & args]
   (let [mt-args (flatten (map vector (repeat match-type) args))
         old-args (@s-data data-name)] 
