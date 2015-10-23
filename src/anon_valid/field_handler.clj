@@ -45,15 +45,21 @@
   (with-open [r (PushbackReader. (io/reader file-name))]
     (check-sdata-forms r)))
       
-(defn load-sdata 
+(defn load-sdata-file 
   "Loads and evaluate an sdata file"
-  [file-or-dir]
-  (if (check-sdata-file file-or-dir)
-    (let [ns-str (str "(ns anon-valid.sdata." (.getName (io/file file-or-dir)) ")")
+  [file]
+  (if (check-sdata-file file)
+    (let [ns-str (str "(ns anon-valid.sdata." (.getName (io/file file)) ")")
           require-str (str "(use 'anon-valid.field-handler)")]
-      (load-string (str ns-str require-str (slurp file-or-dir)))
+      (load-string (str ns-str require-str (slurp file)))
       true)
     false))
+
+(defn load-sdata
+  [dir-or-file]
+  (for [f (file-seq (io/file dir-or-file))
+        :when (and (.isFile f) (.canRead f) (.endsWith (.getName f) ".sdata"))]
+    (load-sdata-file f)))
 
 (def s-fields
   (atom #{}))

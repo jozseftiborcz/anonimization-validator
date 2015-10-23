@@ -4,5 +4,5 @@
 - invariant check: sensitive-data values for a name should have identical type (eg. string, int)
 - sensitive-data min length is not calculated correctly if regexp used
 - option --cache to load cache to ignore tables (from previous scan) The cache file is overwritten the original is moved to .old
-- option --data-file give a file containing sensitive data definition
+- check at program start if select rights is assigned
 
