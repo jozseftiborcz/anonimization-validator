@@ -6,9 +6,10 @@
          '[clojure.tools.logging :as log] 
          '[jdbc.pool.c3p0 :as pool] 
          '[clojure.pprint :as pp]
-         '[anon-valid.db :as db]
          '[clojure.string :as string]
          '[clojure.term.colors :refer :all]
+         '[anon-valid.db :as db]
+         '[anon-valid.cache :as c]
          '[anon-valid.field-handler :as fh])
 
 (defn- full-table-name [table-def]
@@ -16,7 +17,7 @@
     (if table_schem (str table_schem "." table_name) table_name)))
 
 (defn table-row-counts []
-  (log/info "Printing table row counts")
+  "Counts row numbers in tables"
   (sql/with-db-connection [con db/pool]
     (let [tables (db/get-tables con)
           data-tables (map #(assoc % :row_count
@@ -30,16 +31,16 @@
 (defn sensitive-fields 
   ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields con))))
   ([con]
-    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))]
+    (let [fields (transduce (comp (db/fs*min-length 5) (db/fs*sensitive)) conj (db/get-fields con))]
       (reduce #(assoc %1 (:table_name %2) (conj (%1 (:table_name %2)) (:column_name %2))) {} fields))))
   
 (defn sensitive-fields-alternative
   ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields-alternative con))))
   ([con]
-    (let [fields (transduce (comp (db/fs*length 5) (db/fs*sensitive)) conj (db/get-fields con))]
+    (let [fields (transduce (comp (db/fs*min-length 5) (db/fs*sensitive)) conj (db/get-fields con))]
       (into {} (map #(vector (key %) (map :column_name (val %))) (group-by #(:table_name %) fields))))))
 
-(defn print-sensitive-fields []
+(defn- print-sensitive-fields [] ;TODO talán nem is kell
   (log/info "Printing sensitive fields")
   (sql/with-db-connection [con db/pool]
     (let [fields (sensitive-fields con)]
@@ -106,12 +107,17 @@
   ([con progress-fn]
    (progress-fn :start (db/table-count))
    (let [tables (db/get-tables con) 
-;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
-         table-filter (fn[table-def] 
-                        (if (contains-sensitive-value? con table-def)
-                          (do (progress-fn :sensitive-table (db/exact-table-name table-def)) true)
-                          (do (progress-fn :not-sensitive-table (db/exact-table-name table-def)) false)))
-         result (filter table-filter tables)]
+         ;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
+         not-sensitive-table (fn[table-def] 
+                               (let [v (c/sensitive-table (db/exact-table-name table-def))]
+                                 (if (nil? v)
+                                   (if (contains-sensitive-value? con table-def)
+                                     (do (progress-fn :sensitive-table (db/exact-table-name table-def)) true)
+                                     (do (progress-fn :not-sensitive-table (db/exact-table-name table-def)) false))
+                                   (= :sensitive-table v))))
+         result (->> 
+                  tables 
+                  (filter not-sensitive-table))]
      result))
   ([progress-fn]
    (sql/with-db-connection [con db/pool]
@@ -124,16 +130,24 @@
   [con progress-fn table-def] 
   (let [fields (db/get-fields con (:table_name table-def))
         flds-data-name (map-fields-with-data-names fields)
-        field-scan-fn (fn[field data-name] 
-                        (let [field-with-values (map-fields-to-values data-name (list field))
-                              query-string (db/qb*verify-table-contains-sensitive-data 
-                                             (db/exact-table-name table-def) 
-                                             field-with-values)]
-                          (if-not (empty? field-with-values) 
-                            (sql/query con query-string))))
+        cached-field (fn[[field data-name]] 
+                       (if (nil? (c/get-cached
+                                   :sensitive-field 
+                                   (db/exact-table-name field) 
+                                   (:column_name field) 
+                                   data-name))
+                         true
+                         false))
+        flds-data-name (filter cached-field flds-data-name)
+        field-scan (fn[field data-name] 
+                      (let [field-with-values (map-fields-to-values data-name (list field))
+                            query-string (db/qb*verify-table-contains-sensitive-data 
+                                           (db/exact-table-name table-def) 
+                                           field-with-values)]
+                        (if-not (empty? field-with-values) 
+                          (sql/query con query-string))))
         map-fn (fn[[field data-name :as fld-data-name]]
-                 (let [result (field-scan-fn field data-name)
-                       ;;result-fn (fn [x] (map #(str "'" % "'") (distinct (map (keyword (string/lower-case (:column_name field))) x))))] 
+                 (let [result (field-scan field data-name)
                        result-fn (fn [x] (->> 
                                            x
                                            (map (keyword (string/lower-case (:column_name field)))) 
@@ -153,7 +167,7 @@
   * :start table-count - at the beginning of scan returning the number of tables.
   * :sensitive-table table-name - the table contains sensitive data
   * :not-sensitive-table table-name - the table doesn't contain sensitive data
-  * :sensitive-field table-name field-name data-name (examples...) - table's field contains values from data name (plus some examples)"
+  * :sensitive-field table-name field-name data-name examples - table's field contains values from data name (plus some examples)"
   ([progress-fn table-finder-fn]
    (sql/with-db-connection [con db/pool]
      (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con progress-fn)))))

@@ -189,7 +189,7 @@
     [(qb*limit-result-set (str "select * from " table-name " where " (apply str cond-str)))]))
 
 ;; field selectors
-(defmacro fs*length
+(defmacro fs*min-length
   [size]
   `(filter #(if (:column_size %1) (> (:column_size %1) ~size) true)))
 

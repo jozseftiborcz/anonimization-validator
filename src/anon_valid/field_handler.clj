@@ -28,7 +28,7 @@
       (if (and (list? f) (= 'sdata-definition (first f)))
         (check-sdata-forms rdr true)
         (do
-          (log/error "Invalid form " f)
+          (log/error "Invalid form" f)
           (log/error "Expected (sdata-definition \"coll-name\")")
           false))))
   ([rdr no-header]
@@ -56,6 +56,7 @@
     false))
 
 (defn load-sdata
+  "Loads sensitive data definition files"
   [dir-or-file]
   (for [f (file-seq (io/file dir-or-file))
         :when (and (.isFile f) (.canRead f) (.endsWith (.getName f) ".sdata"))]
