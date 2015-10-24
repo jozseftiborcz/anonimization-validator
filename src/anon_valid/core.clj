@@ -1,16 +1,15 @@
 (ns anon-valid.core
   (:gen-class)
-  (:import com.mchange.v2.c3p0.ComboPooledDataSource))
-
-(require '[clojure.java.jdbc :as sql] 
-         '[clojure.tools.logging :as log] 
-         '[jdbc.pool.c3p0 :as pool] 
-         '[clojure.pprint :as pp]
-         '[clojure.string :as string]
-         '[clojure.term.colors :refer :all]
-         '[anon-valid.db :as db]
-         '[anon-valid.cache :as c]
-         '[anon-valid.field-handler :as fh])
+  (:import com.mchange.v2.c3p0.ComboPooledDataSource)
+  (:require [clojure.java.jdbc :as sql] 
+            [clojure.tools.logging :as log] 
+            [jdbc.pool.c3p0 :as pool] 
+            [clojure.pprint :as pp]
+            [clojure.string :as string]
+            [clojure.term.colors :refer :all]
+            [anon-valid.db :as db]
+            [anon-valid.cache :as c]
+            [anon-valid.field-handler :as fh]))
 
 (defn- full-table-name [table-def]
   (let [{:keys [table_schem table_name]} table-def]
@@ -131,11 +130,7 @@
   (let [fields (db/get-fields con (:table_name table-def))
         flds-data-name (map-fields-with-data-names fields)
         cached-field (fn[[field data-name]] 
-                       (if (nil? (c/get-cached
-                                   :sensitive-field 
-                                   (db/exact-table-name field) 
-                                   (:column_name field) 
-                                   data-name))
+                       (if (nil? (c/field-sensitive-to-data-name? field data-name))
                          true
                          false))
         flds-data-name (filter cached-field flds-data-name)

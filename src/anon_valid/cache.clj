@@ -1,5 +1,6 @@
 (ns anon-valid.cache
-  (:require [clojure.java.io :as io]))
+  (:require [clojure.java.io :as io]
+            [anon-valid.db :as db]))
 
 (def the-cache (atom {}))
 
@@ -49,3 +50,13 @@
   "It checks if a value is in the cache. Returns nil if not in cache, value otherwise."
   [& k]
   (get @the-cache k))
+
+(defn field-sensitive-to-data-name?
+  "Checks if cache contains information about field sensitivity to data-name."
+  [field data-name]
+  (get-cached 
+    :sensitive-field 
+    (db/exact-table-name field) 
+    (:column_name field) 
+    data-name))
+
