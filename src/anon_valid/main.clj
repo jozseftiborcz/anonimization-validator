@@ -11,7 +11,7 @@
             [anon-valid.core :as core]
             [anon-valid.db :as db]))
 
-(def version "0.1.0")
+(def version "0.5.0")
 
 (def commands (atom []))
 
@@ -45,7 +45,8 @@
    ["-P" "--password PASSWORD" "Database password, if not given asked from the command line" :id :pwd]
    ["-p" "--port PORT" "Database port, default is database type dependent" :id :port]
    ["-u" "--user USERNAME" "Database user" :id :user]
-   ["-f" "--formatting FORMATTING" "Use FORMATTING where possible" :id :formating :default :pretty]])
+   ["-f" "--formatting FORMATTING" "Use FORMATTING where possible" :id :formating :default :pretty]
+   ["-v" "--version" "Print program version" :id :version ]])
 
 (defn usage [options-summary]
   (->> ["Anonimization validator. It validates a database via JDBC connection that sensitive data is deleted."
@@ -105,6 +106,8 @@
 (defn -main
   [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
+    (if (:version options)
+      (exit 0 (str "program version " version)))
     (cond
       (or (:help options) (nil? (:execute-command options))) (exit 0 (usage summary))
       errors (exit 1 (error-msg errors))
