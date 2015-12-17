@@ -11,7 +11,7 @@
             [anon-valid.core :as core]
             [anon-valid.db :as db]))
 
-(def version "0.5.0")
+(def version "0.5.1")
 
 (def commands (atom []))
 
@@ -33,9 +33,10 @@
 
 (def cli-options
   [["-h" "--help" "Print this help" :id :help]
-   ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "sample-sensitive-fields"
+   ["-x" "--ex COMMAND" "Execute a command" :id :execute-command :default "test-connection"
     :validate-fn #((command-names) %)]
-   ["-d" "--db-name DATABASE_NAME" "Database or schema name" :id :database-name]
+   ["-d" "--db-name DATABASE_NAME" "Database name" :id :database-name]
+   ["-s" "--schema-name SCHEMA_NAME" "Schema name" :id :schema-name]
    ["-D" "--data-file DATA_FILE_OR_DIRECTORY" "Loads sensitive data definitions from file or directory" :id :data-file ]
    ["-c" "--cache CACHE" "Loads cached result from file. Program will overwrite the cache with the result. A backup is created in .bkp file." :id :cache-file ]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
@@ -45,6 +46,7 @@
    ["-P" "--password PASSWORD" "Database password, if not given asked from the command line" :id :pwd]
    ["-p" "--port PORT" "Database port, default is database type dependent" :id :port]
    ["-u" "--user USERNAME" "Database user" :id :user]
+   ["-g" "--generate SCRIPTNAME" "Generate anonimization script" :id :script-name]
    ["-f" "--formatting FORMATTING" "Use FORMATTING where possible" :id :formating :default :pretty]
    ["-v" "--version" "Print program version" :id :version ]])
 
@@ -85,6 +87,9 @@
   (println "searching for fields containing sensitive data")
   (core/scan-for-fields-with-sensitive-values std-progress))
 
+(command tc test-connection "Test database connection"
+  (println "success!"))
+
 (command st sensitive-tables "Searching for tables with sensitive content"
   (println "Searching for tables containing sensitive data")
   (core/tables-with-sensitive-values std-progress))
@@ -112,7 +117,7 @@
       (or (:help options) (nil? (:execute-command options))) (exit 0 (usage summary))
       errors (exit 1 (error-msg errors))
       (nil? (:user options)) (exit 1 "Missing user name for connection")
-      (nil? (:database-name options)) (exit 1 "Missing schema name")
+      (nil? (:database-name options)) (exit 1 "Missing database name")
       (not (db/set-and-test-connection options)) (exit 1 ""))
     (if-let [data-file (:data-file options)]
       (if (some false? (fh/load-sdata data-file))

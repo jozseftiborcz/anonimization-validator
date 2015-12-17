@@ -13,6 +13,8 @@
 (def ^:dynamic *db-type* :mysql)
 ;; default number of rows returned
 (def ^:dynamic *result-set-limit* 5)
+;; connection options
+(def ^:dynamic *command-options* {})
 
 (defn default-port 
   "Returns the default database port"
@@ -86,6 +88,7 @@
   "Connects to database with the options"
   [options]
   (set-connection-arg options)
+  (def ^:dynamic *command-options* options)
   (let [{:keys [database-name host user]} options]
     (try 
       (log/info (format "Connecting to database %s on host %s with user %s" database-name host user))
@@ -129,7 +132,10 @@
   "Returns a seq of tables visible to current user"
   ([] (sql/with-db-connection [con pool] (doall (get-tables con))))
   ;([con] (doall (resultset-seq (.getTables (.getMetaData (:connection con)) nil nil nil (into-array ["TABLE" "VIEW"]))))))
-  ([con] (let [results (resultset-seq (.getTables (.getMetaData (:connection con)) nil nil nil (into-array ["TABLE"])))]
+  ([con] (let [results (resultset-seq (.getTables (.getMetaData (:connection con)) 
+                                                  nil 
+                                                  (if-let [opt (:schema-name *command-options*)] opt nil)
+                                                  nil (into-array ["TABLE"])))]
            (filter #(or (not oracle?) (not (some #{(:table_schem %)} '("SYS" "SYSTEM")))) results))))
 
 (defn get-fields 
