@@ -146,7 +146,10 @@
      (sql/with-db-connection [con pool] (doall (get-fields con con-or-table)))
      (get-fields con-or-table nil)))
   ([con table] 
-   (resultset-seq (.getColumns (.getMetaData (:connection con)) nil nil table nil))))
+   (resultset-seq (.getColumns (.getMetaData (:connection con)) 
+                               nil 
+                               (if-let [opt (:schema-name *command-options*)] opt nil)
+                               table nil))))
 
 ;; {:table_cat "xxx", :table_schem nil, :table_name "jos_vm_product", :column_name "product_id", :data_type 4, :type_name "INT", :column_size 10, :buffer_length 65535, :decimal_digits 0, :num_prec_radix 10, :nullable 0, :remarks "", :column_def nil, :sql_data_type 0, :sql_datetime_sub 0, :char_octet_length nil, :ordinal_position 1, :is_nullable "NO", :scope_catalog nil, :scope_schema nil, :scope_table nil, :source_data_type nil, :is_autoincrement "YES"}
 
@@ -185,7 +188,7 @@
                     (let [field-name (quote-field-name field-name)]
                     (cond 
                       (number? fv) (str field-name "=" fv)
-                      (string? fv) (str "lower(" field-name ")" 
+                      (string? fv) (str "lower(\"" field-name "\")" 
                                         (case match-type
                                           :exact (str "='" fv "'")
                                           :like (str " like '%" fv "%'"))))))

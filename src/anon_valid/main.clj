@@ -11,11 +11,13 @@
             [anon-valid.core :as core]
             [anon-valid.db :as db]))
 
-(def version "0.5.1")
+(def version "0.6.0")
 
 (def commands (atom []))
 
 (def ^:dynamic *cache-file* nil)
+
+(def ^:dynamic *options* nil)
 
 (defmacro command [cmd-short-name cmd-long-name cmd-doc & body] 
   `(do
@@ -102,6 +104,10 @@
   (println "Sample table suspected sensitive fields")
   (core/sample-sensitive-fields))
 
+(command dfd dump-field-definitions "Dump field definitions"
+  (println "Dump table field definitions of schema " (*options* :schema-name))
+  (println (count (core/dump-field-definitions std-progress))))
+
 (defn execute-command [options]
   (let [cmd-name (symbol (:execute-command options))]
     ((first (filter #(let [m-cmd (meta %)]
@@ -111,6 +117,7 @@
 (defn -main
   [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
+    (def ^:dynamic *options* options)
     (if (:version options)
       (exit 0 (str "program version " version)))
     (cond
@@ -126,9 +133,9 @@
         (fh/load-definitions)))
     (if-let [cache-file (:cache-file options)]
       (try
-        (c/load-cache cache-file)
-        (log/info "Loading cache file" cache-file)
         (def ^:dynamic *cache-file* cache-file)
+        (log/info "Loading cache file" cache-file)
+        (c/load-cache cache-file)
         (catch Exception e
           (log/warn "Error reading cache file" cache-file))))
 

@@ -68,11 +68,14 @@
   data name is used."
   ([data-name fields]
    (let [values-for-field (fn [result-so-far field-def] 
+                            (try 
                             (if (db/stringish? (:type_name field-def))
                               (if-let [filtered (fh/s-data*filter-values-by-max data-name (:column_size field-def))] 
                                 (conj result-so-far (conj filtered (:column_name field-def)))
                               result-so-far)
-                             result-so-far))] 
+                             result-so-far)
+                             (catch java.sql.SQLException e
+                               result-so-far)))] 
      (remove nil? (reduce values-for-field () fields))))
   ([fields]
    (map-fields-to-values nil fields)))
@@ -173,3 +176,10 @@
 
 
 
+(defn dump-field-definitions
+  [progress-fn]
+  (sql/with-db-connection [con db/pool]
+    (let [tables (db/get-fields con)
+          field-fn (fn[field] 
+                     (progress-fn :field-definition field))]
+      (doall (map field-fn tables)))))
