@@ -25,6 +25,10 @@
   ([k v]
    (swap! the-cache assoc k v)))
 
+(defn cache-x
+  [k v]
+  (swap! the-cache assoc k v))
+
 (defn cache
   "Set cache from progress information. If called without arguments returns the full cache."
   ([[stage & args :as all-param]]

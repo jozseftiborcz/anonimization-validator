@@ -15,6 +15,9 @@
   (let [{:keys [table_schem table_name]} table-def]
     (if table_schem (str table_schem "." table_name) table_name)))
 
+(defn no-cache[& params]
+  false)
+
 (defn table-row-counts []
   "Counts row numbers in tables"
   (sql/with-db-connection [con db/pool]
@@ -174,7 +177,25 @@
      (scan-for-fields-with-sensitive-values progress-or-table-def tables-with-sensitive-values)
      (scan-for-fields-with-sensitive-values nil-progress (fn[& args] progress-or-table-def)))))
 
+(defn dump-table-definitions
+  ([cache-fn progress-fn]
+   (sql/with-db-connection [con db/pool]
+     (let [tables (db/get-tables con)
+           process-fn (fn[table] 
+                        (if-not (cache-fn table)
+                          (progress-fn :table-definition table)))]
+       (progress-fn :start)
+       (doall (map process-fn tables))
+       (progress-fn :end))))
+  ([progress-fn] (dump-table-definitions no-cache progress-fn)))
 
+(defn dump-table-definitions-x
+  [progress-fn]
+  (sql/with-db-connection [con db/pool]
+    (->>
+      (db/get-tables con)
+      (map #(progress-fn :table-definition %))
+      doall)))
 
 (defn dump-field-definitions
   [progress-fn]

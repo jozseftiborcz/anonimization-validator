@@ -92,7 +92,7 @@
   (let [{:keys [database-name host user]} options]
     (try 
       (log/info (format "Connecting to database %s on host %s with user %s" database-name host user))
-      (log/debug @db-spec)
+      (log/debug (assoc @db-spec :password "***"))
       (with-open [con (sql/get-connection @db-spec)]
         true)
       (catch ^java.sql.SQLException Exception e (log/error (str "Error connecting to database:" (.getMessage e)))))))
