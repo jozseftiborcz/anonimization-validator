@@ -183,7 +183,8 @@
      (let [tables (db/get-tables con)
            process-fn (fn[table] 
                         (if-not (cache-fn table)
-                          (progress-fn :table-definition table)))]
+                          (progress-fn :table-definition table)
+                          (progress-fn :table-definition (cache-fn table))))]
        (progress-fn :start)
        (doall (map process-fn tables))
        (progress-fn :end))))

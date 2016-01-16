@@ -5,6 +5,7 @@
             [clojure.term.colors :refer :all]
             [clojure.pprint :as pp]
             [clojure.string :as string]
+            [clojure.java.io :as io]
             [clojure.tools.cli :as cli]
             [anon-valid.field-handler :as fh]
             [anon-valid.cache :as c]
@@ -16,6 +17,7 @@
 (def commands (atom []))
 
 (def ^:dynamic *cache-file* nil)
+(def ^:dynamic *result-file* nil)
 (def ^:dynamic *options* nil)
 
 (defmacro command [cmd-short-name cmd-long-name cmd-doc & body] 
@@ -49,14 +51,14 @@
    ["-P" "--password PASSWORD" "Database password, if not given asked from the command line" :id :pwd]
    ["-p" "--port PORT" "Database port, default is database type dependent" :id :port]
    ["-u" "--user USERNAME" "Database user" :id :user]
-   ["-l" "--log LOGFILE" "write log file in format (default csv)" :id :log-file]
-   ["-L" nil "same as -l but log file name will be the default one (dbname_schemaname.log)" :id :log-file
-    :assoc-fn (fn[m k _] (assoc m :log-file :default-log-file))]
-   ["-c" "--cache CACHEFILE" "use cached result from file. Program will overwrite the cache with the new result. A backup is created in .bkp file." :id :cache-file]
+   ["-r" "--result RESULTFILE" "write log file in format (default csv)" :id :result-file]
+   ["-R" nil "same as -l but log file name will be the default one (dbname_schemaname.log)" :id :result-file
+    :assoc-fn (fn[m k _] (assoc m :result-file :default-result-file))]
+   ["-f" "--formatting FORMATTING" "result formatting (csv, json clj)" :id :formating :default :csv]
+   ["-c" "--cache CACHEFILE" "use cached result from file. Program will overwrite the cache with the new result. A backup is created in .bkp file." :id :cache-file
+    :validate-fn #(#{:csv :json :clj} %)]
    ["-C" nil "same as -c but cache file will be the default one" :id :cache-file 
     :assoc-fn (fn[m k _] (assoc m :cache-file :default-cache-file))]
-   ["-f" "--formatting FORMATTING" "Use FORMATTING where possible" :id :formating :default :csv
-    :validate-fn #(#{:csv :json :clj :log} %)]
    ["-v" nil "Verbosity levels, can be specified multiple times: (-vvvv) no info and no log (-vvv) no info and log, (-vv) info and log, -v debug and log" :id :verbosity :default 0
     :assoc-fn (fn [m k _] (update-in m [k] inc))]
    ["-g" "--generate SCRIPTNAME" "Generate anonimization script" :id :script-name]
@@ -114,20 +116,35 @@
          "Dump field definitions of schema"
          (core/dump-field-definitions std-progress))
 
+(defn cache-result
+  [k v]
+  (if *cache-file* 
+    (c/cache-x k v)))
+
+(defn write-result
+  [& args]
+  (if *result-file*
+    (do 
+      (.write *result-file* (str args "\n"))
+      (.flush *result-file*))))
+
 (defn dt-progress 
   [stage & [args]]
   (case stage
     :start (log/info "table-schema;table-type;table-name")
     :table-definition
         (let [{:keys [table_schem table_type table_name]} args]
-          (if *cache-file* 
-            (c/cache-x [table_schem table_type table_name] true))
-          (log/info (str table_schem ";" table_type ";" table_name)))
+          (cache-result [table_schem table_type table_name] args)
+          (log/info (str table_schem "." table_type "." table_name))
+          (write-result table_schem ";" table_type ";" table_name))
     nil))
 
 (command dt dump-table-definitions 
          "Dump tables of schema" 
-         (core/dump-table-definitions dt-progress))
+         (core/dump-table-definitions 
+           #(let [{:keys [table_schem table_type table_name]} %]
+              (c/get-cached table_schem table_type table_name)) 
+           dt-progress))
 
 (defn execute-command [options]
   (let [cmd-name (symbol (:execute-command options))]
@@ -144,18 +161,31 @@
       (fh/load-definitions)))
   `~cmd)
 
-(defmacro log-handler 
+(defn default-file-name
+  [extension]
+  (str (*options* :database-name) "_" 
+       (*options* :schema-name)
+       extension))
+
+(defmacro result-handler 
   [cmd]
-  `~cmd)
+   `(if-let [result-file# (if (= (:result-file *options*)
+                                :default-result-file)
+                            (default-file-name ".res")
+                            (:result-file *options*))]
+      (do 
+        (log/info "Writing result to file" result-file#)
+        (with-open [file# (io/writer result-file#)]
+          (binding [*result-file* file#]
+           ~cmd)))
+     ~cmd))
 
 (defmacro cache-handler
   [cmd]
   `(do 
      (if-let [cache-file# (if (= (:cache-file *options*)
                                  :default-cache-file)
-                            (str (*options* :database-name) "_" 
-                                 (*options* :schema-name)
-                                 ".cache")
+                            (default-file-name ".cache")
                             (:cache-file *options*))]
        (try
          (def ^:dynamic *cache-file* cache-file#)
@@ -193,7 +223,7 @@
       sdata-handler
       cache-handler
       connection-handler
-      log-handler)))
+      result-handler)))
 ;    (if *cache-file* (c/write-cache *cache-file*))))
 
 
