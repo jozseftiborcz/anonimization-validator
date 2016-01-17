@@ -15,9 +15,6 @@
   (let [{:keys [table_schem table_name]} table-def]
     (if table_schem (str table_schem "." table_name) table_name)))
 
-(defn no-cache[& params]
-  false)
-
 (defn table-row-counts []
   "Counts row numbers in tables"
   (sql/with-db-connection [con db/pool]
@@ -106,7 +103,10 @@
 
 (defn- nil-progress [stage & args] nil)
 
-(defn debug-progress [ & args] (prn args))
+(defn- debug-progress [ & args] (prn args))
+
+(defn- no-cache[& params]
+  false)
 
 (defn tables-with-sensitive-values 
   ([con progress-fn]
@@ -181,27 +181,32 @@
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
      (let [tables (db/get-tables con)
-           process-fn (fn[table] 
-                        (if-not (cache-fn table)
-                          (progress-fn :table-definition table)
-                          (progress-fn :table-definition (cache-fn table))))]
-       (progress-fn :start)
+           cache-key (fn[result] (let [{:keys [table_schem table_type table_name]} result]
+                                   [table_schem table_type table_name]))
+           process-fn (fn[table]
+                        (if-let [res (cache-fn (cache-key table))] 
+                          (progress-fn :cached-table-definition res)
+                          (do (cache-fn (cache-key table) table)
+                            (progress-fn :table-definition table))))]
+       (progress-fn :start :dtd)
        (doall (map process-fn tables))
-       (progress-fn :end))))
+       (progress-fn :end :dtd))))
   ([progress-fn] (dump-table-definitions no-cache progress-fn)))
 
-(defn dump-table-definitions-x
-  [progress-fn]
-  (sql/with-db-connection [con db/pool]
-    (->>
-      (db/get-tables con)
-      (map #(progress-fn :table-definition %))
-      doall)))
-
 (defn dump-field-definitions
-  [progress-fn]
-  (sql/with-db-connection [con db/pool]
-    (let [tables (db/get-fields con)
-          field-fn (fn[field] 
-                     (progress-fn :field-definition field))]
-      (doall (map field-fn tables)))))
+  ([cache-fn progress-fn]
+   (sql/with-db-connection [con db/pool]
+     (let [tables (db/get-tables con)
+           cache-key (fn[result] (let [{:keys [table_schem table_type table_name]} result]
+                       [table_schem table_type table_name]))
+           process-fn (fn[table]
+                        (if-let [res (cache-fn (cache-key table))] 
+                          (progress-fn :cached-table-field-definition res)
+                          (sql/with-db-connection [con2 db/pool]
+                            (let [fields (doall (db/get-fields con (:table_name table)))] 
+                              (cache-fn (cache-key table) fields)
+                              (progress-fn :table-field-definition fields)))))]
+       (progress-fn :start :dfd)
+       (doall (map process-fn tables))
+       (progress-fn :end :dfd))))
+  ([progress-fn] (dump-table-definitions no-cache progress-fn)))

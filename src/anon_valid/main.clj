@@ -8,7 +8,7 @@
             [clojure.java.io :as io]
             [clojure.tools.cli :as cli]
             [anon-valid.field-handler :as fh]
-            [anon-valid.cache :as c]
+;            [anon-valid.cache :as c]
             [anon-valid.core :as core]
             [anon-valid.db :as db]))
 
@@ -17,6 +17,7 @@
 (def commands (atom []))
 
 (def ^:dynamic *cache-file* nil)
+(def the-cache (atom {}))
 (def ^:dynamic *result-file* nil)
 (def ^:dynamic *options* nil)
 
@@ -97,6 +98,44 @@
 ;  (if *cache-file* (c/cache args))
   (log/info args))
 
+(defn cache
+  ([k v]
+   (if *cache-file* 
+     (swap! the-cache assoc k v)))
+  ([k] 
+   (if *cache-file*
+     (get @the-cache k))))
+
+(defn write-result
+  [& args]
+  (if *result-file*
+    (do 
+      (.write *result-file* (apply str args))
+      (.write *result-file* "\n")
+      (.flush *result-file*))))
+
+(defn dt-progress 
+  [stage & args]
+  (let [{:keys [table_schem table_type table_name]} (first args)]
+    (case stage
+      :start 
+        (case (first args) 
+          :dtd (do 
+                 (log/info "table-schema;table-type;table-name")
+                 (write-result "table-schema;table-type;table-name"))
+          :dfd (do 
+                 (log/info "table-schema;table-type;table-name;field-name")
+                 (write-result "table-schema;table-type;table-name;field-name"))
+          nil)
+      :table-field-definition
+        (log/info args)
+      :table-definition 
+        (do (log/info (str table_schem "." table_type "." table_name))
+          (write-result table_schem ";" table_type ";" table_name))
+      :cached-table-definition
+        (write-result table_schem ";" table_type ";" table_name)
+      nil)))
+
 (command sf scan-fields "Searching for fields with sensitive content"
   (core/scan-for-fields-with-sensitive-values std-progress))
 
@@ -112,39 +151,47 @@
 (command sat sample-tables "Sample suspected fields of tables"
   (core/sample-sensitive-fields))
 
+(defn dfd-progress[]
+  (let [first-row? (atom false)]
+    (fn[stage & args]
+      (case stage
+        :start 
+        (reset! first-row? true)
+        (:table-field-definition :cached-table-field-definition)
+        (let [field-writer (fn[field] 
+                             (doall (map #(field %) (sort (keys field)))))
+              fields (first args)]
+          (if first-row?
+            (do (reset! first-row? false)
+              (log/info (sort(keys(first fields))))
+              (write-result (string/join ";" (sort(keys(first fields)))))))
+          (doall (map #(do (if (= stage :table-field-definition) 
+                             (log/info (field-writer %))) 
+                         (write-result (string/join ";" (field-writer %)))) fields)))
+        nil))))
+
 (command dfd dump-field-definitions 
          "Dump field definitions of schema"
-         (core/dump-field-definitions std-progress))
+         (core/dump-field-definitions cache (dfd-progress)))
 
-(defn cache-result
-  [k v]
-  (if *cache-file* 
-    (c/cache-x k v)))
-
-(defn write-result
-  [& args]
-  (if *result-file*
-    (do 
-      (.write *result-file* (str args "\n"))
-      (.flush *result-file*))))
-
-(defn dt-progress 
-  [stage & [args]]
-  (case stage
-    :start (log/info "table-schema;table-type;table-name")
-    :table-definition
-        (let [{:keys [table_schem table_type table_name]} args]
-          (cache-result [table_schem table_type table_name] args)
-          (log/info (str table_schem "." table_type "." table_name))
+(defn dtd-progress 
+  [stage & args]
+  (let [{:keys [table_schem table_type table_name]} (first args)]
+    (case stage
+      :start 
+          (do 
+            (log/info "table-schema;table-type;table-name")
+            (write-result "table-schema;table-type;table-name"))
+      :table-definition 
+        (do (log/info (str table_schem "." table_type "." table_name))
           (write-result table_schem ";" table_type ";" table_name))
-    nil))
+      :cached-table-definition
+        (write-result table_schem ";" table_type ";" table_name)
+      nil)))
 
-(command dt dump-table-definitions 
+(command dtd dump-table-definitions 
          "Dump tables of schema" 
-         (core/dump-table-definitions 
-           #(let [{:keys [table_schem table_type table_name]} %]
-              (c/get-cached table_schem table_type table_name)) 
-           dt-progress))
+         (core/dump-table-definitions cache dtd-progress))
 
 (defn execute-command [options]
   (let [cmd-name (symbol (:execute-command options))]
@@ -154,17 +201,18 @@
 
 (defmacro sdata-handler
   [cmd]
-  (if-let [data-file (:data-file *options*)]
-    (if (some false? (fh/load-sdata data-file))
-      (exit 1 (str "Error parsing file " data-file)))
-    (do (log/info "Loading standard definitions...")
-      (fh/load-definitions)))
-  `~cmd)
+  `(do (if-let [data-file# (:data-file *options*)]
+         (if (some false? (fh/load-sdata data-file#))
+           (exit 1 (str "Error parsing file " data-file#)))
+         (do (log/info "Loading standard definitions...")
+           (fh/load-definitions)))
+     ~cmd))
 
 (defn default-file-name
   [extension]
   (str (*options* :database-name) "_" 
-       (*options* :schema-name)
+       (*options* :schema-name) "_"
+       (*options* :execute-command)
        extension))
 
 (defmacro result-handler 
@@ -180,25 +228,32 @@
            ~cmd)))
      ~cmd))
 
+(defn write-cache
+  "Writes the cache to file and creates a backup"
+  [file]
+  (let [bkp (io/file (str file ".bkp"))
+        file (io/file file)]
+    (if (.exists file)
+      (io/copy file bkp))
+    (spit file @the-cache)))
+
 (defmacro cache-handler
   [cmd]
-  `(do 
-     (if-let [cache-file# (if (= (:cache-file *options*)
-                                 :default-cache-file)
-                            (default-file-name ".cache")
-                            (:cache-file *options*))]
-       (try
-         (def ^:dynamic *cache-file* cache-file#)
-         (log/info "Loading cache file" cache-file#)
-         (c/load-cache cache-file#)
-         (catch Exception e#
-           (log/warn "Error reading cache file" cache-file#))))
-     (try 
+  `(if-let [cache-file# (if (= (:cache-file *options*)
+                               :default-cache-file)
+                          (default-file-name ".cache")
+                          (:cache-file *options*))]
+     (do 
+       (def ^:dynamic *cache-file* cache-file#)
+       (if (.exists (io/as-file cache-file#))
+         (try
+           (log/info "Loading cache file" cache-file#)
+           (reset! the-cache (read-string (slurp cache-file#)))
+           (catch Exception e#
+             (log/warn "Error reading cache file" cache-file# e#))))
        ~cmd
-       (finally 
-         (if *cache-file* 
-           (do 
-             (c/write-cache *cache-file*)))))))
+       (if *cache-file* (write-cache *cache-file*)))
+     ~cmd))
 
 (defmacro connection-handler
   [cmd]
@@ -220,10 +275,9 @@
     (println *options*)
     (->>
       (execute-command options)
-      sdata-handler
+      result-handler
       cache-handler
-      connection-handler
-      result-handler)))
-;    (if *cache-file* (c/write-cache *cache-file*))))
+      sdata-handler
+      connection-handler)))
 
 

@@ -25,22 +25,6 @@
   ([k v]
    (swap! the-cache assoc k v)))
 
-(defn cache-x
-  [k v]
-  (swap! the-cache assoc k v))
-
-(defn cache
-  "Set cache from progress information. If called without arguments returns the full cache."
-  ([[stage & args :as all-param]]
-   (case stage
-     :sensitive-field (set-cache all-param 4 1)
-     :table-row-count (set-cache all-param 2 1)
-     :sensitive-table (set-cache (first args) :sensitive-table)
-     :not-sensitive-table (set-cache (first args) :not-sensitive-table)
-     nil))
-  ([] 
-   the-cache))
-
 (defn not-empty? 
   "Returns if cache is empty"
   [] (empty? @the-cache))
