@@ -200,10 +200,11 @@
            cache-key (fn[result] (let [{:keys [table_schem table_type table_name]} result]
                        [table_schem table_type table_name]))
            process-fn (fn[table]
+                        (progress-fn :table-start table)
                         (if-let [res (cache-fn (cache-key table))] 
                           (progress-fn :cached-table-field-definition res)
                           (sql/with-db-connection [con2 db/pool]
-                            (let [fields (doall (db/get-fields con (:table_name table)))] 
+                            (let [fields (doall (db/get-fields con2 (:table_name table)))] 
                               (cache-fn (cache-key table) fields)
                               (progress-fn :table-field-definition fields)))))]
        (progress-fn :start :dfd)

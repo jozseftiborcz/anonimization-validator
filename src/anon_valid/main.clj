@@ -157,16 +157,17 @@
       (case stage
         :start 
         (reset! first-row? true)
+        :table-start
+        (log/info (:table_name (first args)))
         (:table-field-definition :cached-table-field-definition)
         (let [field-writer (fn[field] 
                              (doall (map #(field %) (sort (keys field)))))
               fields (first args)]
-          (if first-row?
+          (if @first-row?
             (do (reset! first-row? false)
               (log/info (sort(keys(first fields))))
               (write-result (string/join ";" (sort(keys(first fields)))))))
-          (doall (map #(do (if (= stage :table-field-definition) 
-                             (log/info (field-writer %))) 
+          (doall (map #(do 
                          (write-result (string/join ";" (field-writer %)))) fields)))
         nil))))
 
