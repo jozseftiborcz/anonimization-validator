@@ -120,7 +120,7 @@
     :mssql field-name))
 
 (defn table-count
-  "Returns the count of tables visible to current user."
+  "Returns the number of tables visible to current user."
   ([con]
    (let [result (case *db-type*
                   :oracle (sql/query con ["select count(*) as cnt from all_tables"])
@@ -132,11 +132,14 @@
   "Returns a seq of tables visible to current user"
   ([] (sql/with-db-connection [con pool] (doall (get-tables con))))
   ;([con] (doall (resultset-seq (.getTables (.getMetaData (:connection con)) nil nil nil (into-array ["TABLE" "VIEW"]))))))
-  ([con] (let [results (resultset-seq (.getTables (.getMetaData (:connection con)) 
-                                                  nil 
-                                                  (if-let [opt (:schema-name *command-options*)] opt nil)
-                                                  nil (into-array ["TABLE"])))]
-           (filter #(or (not oracle?) (not (some #{(:table_schem %)} '("SYS" "SYSTEM")))) results))))
+  ([con] (let [results (resultset-seq 
+                         (.getTables (.getMetaData (:connection con)) 
+                                     nil 
+                                     (if-let [opt (:schema-name *command-options*)] opt nil)
+                                     nil (into-array ["TABLE"])))]
+           (filter #(or (not oracle?) 
+                        (not (some #{(:table_schem %)} '("SYS" "SYSTEM")))) 
+                   results))))
 
 (defn get-fields 
   "Returns the fields of either a table or every table."

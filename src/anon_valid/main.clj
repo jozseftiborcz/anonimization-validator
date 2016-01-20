@@ -114,42 +114,32 @@
       (.write *result-file* "\n")
       (.flush *result-file*))))
 
-(defn dt-progress 
-  [stage & args]
-  (let [{:keys [table_schem table_type table_name]} (first args)]
-    (case stage
-      :start 
-        (case (first args) 
-          :dtd (do 
-                 (log/info "table-schema;table-type;table-name")
-                 (write-result "table-schema;table-type;table-name"))
-          :dfd (do 
-                 (log/info "table-schema;table-type;table-name;field-name")
-                 (write-result "table-schema;table-type;table-name;field-name"))
-          nil)
-      :table-field-definition
-        (log/info args)
-      :table-definition 
-        (do (log/info (str table_schem "." table_type "." table_name))
-          (write-result table_schem ";" table_type ";" table_name))
-      :cached-table-definition
-        (write-result table_schem ";" table_type ";" table_name)
-      nil)))
-
 (command sf scan-fields "Searching for fields with sensitive content"
-  (core/scan-for-fields-with-sensitive-values std-progress))
+  (core/scan-fields-with-sensitive-values cache std-progress))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
 
+(defn st-progress[]
+  (let [first-row? (atom true)]
+    (fn[stage & args]
+      (case stage
+        (:table-sensitivity :cached-table-sensitivity)
+        (do
+          (if @first-row?
+            (do (reset! first-row? false)
+              (write-result "table_name;table_schem;sensitive?")))
+          (if (= stage :table-sensitivity) (log/info args))
+          (write-result (string/join ";" args)))
+        nil))))
 (command st sensitive-tables "Searching for tables with sensitive content"
-  (core/tables-with-sensitive-values std-progress))
+  (core/mark-tables-sensitivity cache (st-progress)))
 
 (command trc row-counts "Count the number of rows in tables"
   (core/table-row-counts))
 
 (command sat sample-tables "Sample suspected fields of tables"
-  (core/sample-sensitive-fields))
+  (core/sample-sensitive-field-names))
 
 (defn dfd-progress[]
   (let [first-row? (atom false)]

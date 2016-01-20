@@ -55,7 +55,7 @@
         non-empty-sample (filter #(> (count (% 1)) 0) sample)]
     (if (not(empty? non-empty-sample)) (vector table non-empty-sample) ())))
 
-(defn sample-sensitive-fields []
+(defn sample-sensitive-field-names []
   (log/info "Sampling sensitive fields")
   (sql/with-db-connection [con db/pool]
     (let [fields (sensitive-fields con)
@@ -99,36 +99,51 @@
       (let [query-string (db/qb*verify-table-contains-sensitive-data (db/exact-table-name table-def) fields-with-values)
 ;;                  xxx (println query-string)
             result (sql/query con query-string)]
-        (> (count result) 0)))))
+        (> (count result) 0))
+      false)))
 
+; Two special progress method for debugging
 (defn- nil-progress [stage & args] nil)
-
 (defn- debug-progress [ & args] (prn args))
 
 (defn- no-cache[& params]
+  "This is a default cache which ignores cache setting and returns no value for cache requests"
   false)
 
-(defn tables-with-sensitive-values 
-  ([con progress-fn]
+(defn mark-tables-sensitivity
+  ([con cache-fn progress-fn]
    (progress-fn :start (db/table-count))
    (let [tables (db/get-tables con) 
          ;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
-         not-sensitive-table (fn[table-def] 
+         cache-key (fn[result] (let [{:keys [table_schem table_name]} result]
+                     [:table-sensitivity table_schem table_name]))
+         not-sensitive-table-x (fn[table-def] 
                                (let [v (c/sensitive-table (db/exact-table-name table-def))]
                                  (if (nil? v)
                                    (if (contains-sensitive-value? con table-def)
                                      (do (progress-fn :sensitive-table (db/exact-table-name table-def)) true)
                                      (do (progress-fn :not-sensitive-table (db/exact-table-name table-def)) false))
                                    (= :sensitive-table v))))
-         result (->> 
-                  tables 
-                  (filter not-sensitive-table))]
-     result))
-  ([progress-fn]
+         sensitivity-marker (fn[table] 
+                              (if-let [res (cache-fn (cache-key table))]
+                                (do 
+                                  (progress-fn :cached-table-sensitivity 
+                                               (:table_schem table)
+                                               (:table_name table) (first res))
+                                  (assoc table :sensitive? (first res)))
+                                (do 
+                                  (let [res (contains-sensitive-value? con table)]
+                                    (cache-fn (cache-key table) (list res))
+                                    (progress-fn :table-sensitivity 
+                                                 (:table_schem table)
+                                                 (:table_name table) res)
+                                    (assoc table :sensitive? res)))))]
+         (map sensitivity-marker tables)))
+  ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
-                           (doall (tables-with-sensitive-values con progress-fn))))
+                           (doall (mark-tables-sensitivity con cache-fn progress-fn))))
   ([]
-   (tables-with-sensitive-values nil-progress)))
+   (mark-tables-sensitivity no-cache nil-progress)))
 
 (defn scan-one-for-fields-with-sensitive-values
   "Scans one table for sensitive fields"
@@ -162,22 +177,30 @@
                        fld-data-name))))]
   (doall (remove nil? (map map-fn flds-data-name)))))
 
-(defn scan-for-fields-with-sensitive-values
+(defn scan-fields-with-sensitive-values
   "Scans database for table fields with sensitive values.
   progress-fn is called at the following stages of the scan:
   * :start table-count - at the beginning of scan returning the number of tables.
   * :sensitive-table table-name - the table contains sensitive data
   * :not-sensitive-table table-name - the table doesn't contain sensitive data
   * :sensitive-field table-name field-name data-name examples - table's field contains values from data name (plus some examples)"
-  ([progress-fn table-finder-fn]
+  ([cache-fn progress-fn table-finder-fn]
    (sql/with-db-connection [con db/pool]
-     (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con progress-fn)))))
-  ([progress-or-table-def]
+     (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con cache-fn progress-fn)))))
+  ([cache-fn progress-or-table-def]
    (if (fn? progress-or-table-def)
-     (scan-for-fields-with-sensitive-values progress-or-table-def tables-with-sensitive-values)
-     (scan-for-fields-with-sensitive-values nil-progress (fn[& args] progress-or-table-def)))))
+     (scan-fields-with-sensitive-values cache-fn progress-or-table-def mark-tables-sensitivity)
+     (scan-fields-with-sensitive-values cache-fn nil-progress (fn[& args] progress-or-table-def))))
+  ([progress-or-table-def] 
+   (scan-fields-with-sensitive-values no-cache progress-or-table-def)))
 
 (defn dump-table-definitions
+  "Dumps table names from the given schema.
+  progress-fn is called at the following stages of the execution:
+  * :start :dtd - at the beginning of the exectuion.
+  * :cached-table-definition table-structure - for each cached table definition
+  * :table-definition table-structure - for each first time read table definition (if no cache is used every call is from this type
+  * :end - at the end of the execution."
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
      (let [tables (db/get-tables con)
@@ -197,8 +220,8 @@
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
      (let [tables (db/get-tables con)
-           cache-key (fn[result] (let [{:keys [table_schem table_type table_name]} result]
-                       [table_schem table_type table_name]))
+           cache-key (fn[result] (let [{:keys [table_schem table_name]} result]
+                       [:table-fields table_schem table_name]))
            process-fn (fn[table]
                         (progress-fn :table-start table)
                         (if-let [res (cache-fn (cache-key table))] 
