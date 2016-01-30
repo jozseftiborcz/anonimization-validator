@@ -15,17 +15,48 @@
   (let [{:keys [table_schem table_name]} table-def]
     (if table_schem (str table_schem "." table_name) table_name)))
 
-(defn table-row-counts []
-  "Counts row numbers in tables"
-  (sql/with-db-connection [con db/pool]
+; Two special progress method for debugging
+(defn- nil-progress [stage & args] nil)
+(defn- debug-progress [ & args] (prn args))
+
+(defn- no-cache[& params]
+  "This is a default cache which ignores cache setting and returns no value for cache requests"
+  false)
+
+(defn table-row-counts 
+  "Counts row numbers in tables.
+  progress-fn is called at the following stages:
+  * :start - at the beginning of listing
+  * :row-count schema table row-count - the number of rows in the table. Only called for non-empty tables.
+  * :cached-row-count schema table row-count - for cached results
+  * :end hash-map(:scanned-tables :non-empty-tables) at the end of listing"
+  ([cache-fn progress-fn]
+   (sql/with-db-connection [con db/pool] 
+                           (table-row-counts con cache-fn progress-fn)))
+  ([] (table-row-counts no-cache nil-progress))
+  ([con cache-fn progress-fn]
     (let [tables (db/get-tables con)
-          data-tables (map #(assoc % :row_count
-                                   (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name %1))))))) 
-                           tables)
-          non-zero-tables (filter #(> (:row_count %) 0) data-tables)] 
+          cache-key (fn[table] (full-table-name table))
+          res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))
+          process-fn (fn[table]
+                       (if-let [res (cache-fn (cache-key table))]
+                         (assoc table :cached true :row_count (res 2))
+                         (let [table (assoc table 
+                                            :row_count 
+                                            (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name table)))))))]
+                           (cache-fn (cache-key table) (res-fn table))
+                           table)))
+          row-counted-tables (map process-fn tables)
+          non-zero-tables (filter #(> (:row_count %) 0) row-counted-tables)] 
+      (progress-fn :start)
       (doall 
-        (map #(println (:table_name %1) (:row_count %1)) non-zero-tables))
-      (printf "Number of non-empty tables: %d\n" (count non-zero-tables)))))
+        (map #(apply progress-fn 
+                     (if (% :cached) :cached-row-count :row-count)
+                     (res-fn %)) non-zero-tables))
+      (progress-fn :end
+                   (hash-map
+                     :scanned-tables (count row-counted-tables) 
+                     :non-empty-tables (count non-zero-tables))))))
 
 (defn sensitive-fields 
   ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields con))))
@@ -38,13 +69,6 @@
   ([con]
     (let [fields (transduce (comp (db/fs*min-length 5) (db/fs*sensitive)) conj (db/get-fields con))]
       (into {} (map #(vector (key %) (map :column_name (val %))) (group-by #(:table_name %) fields))))))
-
-(defn- print-sensitive-fields [] ;TODO talán nem is kell
-  (log/info "Printing sensitive fields")
-  (sql/with-db-connection [con db/pool]
-    (let [fields (sensitive-fields con)]
-      (doall 
-        (map #(println (format "%s: %d: %s" %1 (count (fields %1)) (pr-str (fields %1)))) (keys fields))))))
 
 (defn sample-field [con table field]
   (filter #(or (integer? %) (not(empty? %))) 
@@ -101,14 +125,6 @@
             result (sql/query con query-string)]
         (> (count result) 0))
       false)))
-
-; Two special progress method for debugging
-(defn- nil-progress [stage & args] nil)
-(defn- debug-progress [ & args] (prn args))
-
-(defn- no-cache[& params]
-  "This is a default cache which ignores cache setting and returns no value for cache requests"
-  false)
 
 (defn mark-tables-sensitivity
   ([con cache-fn progress-fn]

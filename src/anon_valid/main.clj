@@ -92,12 +92,6 @@
   (if msg (log/info msg))
   (System/exit status))
 
-(defn- std-progress
-  "Used to display progress information on the stdout"
-  [ & args] 
-;  (if *cache-file* (c/cache args))
-  (log/info args))
-
 (defn cache
   ([k v]
    (if *cache-file* 
@@ -113,6 +107,12 @@
       (.write *result-file* (apply str args))
       (.write *result-file* "\n")
       (.flush *result-file*))))
+
+(defn- std-progress
+  "Used to display progress information on the stdout"
+  [ stage & args] 
+  (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info args))
+  (if-not (#{:start :end} stage) (write-result (string/join ";" args))))
 
 (command sf scan-fields "Searching for fields with sensitive content"
   (core/scan-fields-with-sensitive-values cache std-progress))
@@ -136,7 +136,7 @@
   (core/mark-tables-sensitivity cache (st-progress)))
 
 (command trc row-counts "Count the number of rows in tables"
-  (core/table-row-counts))
+  (core/table-row-counts cache std-progress))
 
 (command sat sample-tables "Sample suspected fields of tables"
   (core/sample-sensitive-field-names))

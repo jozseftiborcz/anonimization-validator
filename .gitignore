@@ -10,4 +10,5 @@ pom.xml.asc
 *.swp
 *.swo
 *.cache
+*.res
 *.cache.bkp
