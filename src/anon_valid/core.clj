@@ -23,6 +23,26 @@
   "This is a default cache which ignores cache setting and returns no value for cache requests"
   false)
 
+(defn- cached-row-counter
+  "creates a row counting function with cache handler"
+  [cache-fn cache-key res-fn]
+  (fn[table]
+    (sql/with-db-connection [con db/pool] 
+      (if-let [res (cache-fn (cache-key table))]
+        (assoc table :cached true :row_count (res 2))
+        (let [table (assoc table 
+                           :row_count 
+                           (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name table)))))))]
+          (cache-fn (cache-key table) (res-fn table))
+          table)))))
+
+(defn- row-counted-tables
+  [cache-fn]
+  (let [tables (db/get-tables)
+        cache-key (fn[table] [:table-row-count (full-table-name table)])
+        res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))]
+    (map (cached-row-counter cache-fn cache-key res-fn) tables)))
+
 (defn table-row-counts 
   "Counts row numbers in tables.
   progress-fn is called at the following stages:
@@ -35,19 +55,8 @@
                            (table-row-counts con cache-fn progress-fn)))
   ([] (table-row-counts no-cache nil-progress))
   ([con cache-fn progress-fn]
-    (let [tables (db/get-tables con)
-          cache-key (fn[table] (full-table-name table))
-          res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))
-          process-fn (fn[table]
-                       (if-let [res (cache-fn (cache-key table))]
-                         (assoc table :cached true :row_count (res 2))
-                         (let [table (assoc table 
-                                            :row_count 
-                                            (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name table)))))))]
-                           (cache-fn (cache-key table) (res-fn table))
-                           table)))
-          row-counted-tables (map process-fn tables)
-          non-zero-tables (filter #(> (:row_count %) 0) row-counted-tables)] 
+    (let [res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))
+          non-zero-tables (filter #(> (:row_count %) 0) (row-counted-tables cache-fn))] 
       (progress-fn :start)
       (doall 
         (map #(apply progress-fn 
@@ -55,7 +64,7 @@
                      (res-fn %)) non-zero-tables))
       (progress-fn :end
                    (hash-map
-                     :scanned-tables (count row-counted-tables) 
+                     :scanned-tables (count (row-counted-tables cache-fn)) 
                      :non-empty-tables (count non-zero-tables))))))
 
 (defn sensitive-fields 
@@ -104,7 +113,7 @@
   ([fields]
    (map-fields-to-values nil fields)))
                                     
-(defn map-fields-with-data-names
+(defn pair-fields-with-data-names
   "Creates a seq of (field data-name) pairs suitable for data matching."
   [fields]
   (let [pair-fn (fn [result-so-far field-def] 
@@ -165,7 +174,7 @@
   "Scans one table for sensitive fields"
   [con progress-fn table-def] 
   (let [fields (db/get-fields con (:table_name table-def))
-        flds-data-name (map-fields-with-data-names fields)
+        flds-data-name (pair-fields-with-data-names fields)
         cached-field (fn[[field data-name]] 
                        (if (nil? (c/field-sensitive-to-data-name? field data-name))
                          true
@@ -215,13 +224,13 @@
   progress-fn is called at the following stages of the execution:
   * :start :dtd - at the beginning of the exectuion.
   * :cached-table-definition table-structure - for each cached table definition
-  * :table-definition table-structure - for each first time read table definition (if no cache is used every call is from this type
+  * :table-definition table-structure - for each table definition (if no cache is used every call is from this type)
   * :end - at the end of the execution."
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
      (let [tables (db/get-tables con)
            cache-key (fn[result] (let [{:keys [table_schem table_type table_name]} result]
-                                   [table_schem table_type table_name]))
+                                   [:table-definition table_schem table_type table_name]))
            process-fn (fn[table]
                         (if-let [res (cache-fn (cache-key table))] 
                           (progress-fn :cached-table-definition res)
@@ -233,6 +242,12 @@
   ([progress-fn] (dump-table-definitions no-cache progress-fn)))
 
 (defn dump-field-definitions
+  "Dumps field definitions of tables from the given schema.
+  progress-fn is called at the following stages of the execution:
+  * :start - at the beginning of the exectuion.
+  * :cached-field-definition field-definition - for each cached field definition
+  * :field-definition field-structure - for each field definition (if no cache is used every call is from this type)
+  * :end - at the end of the execution."
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
      (let [tables (db/get-tables con)
@@ -250,3 +265,31 @@
        (doall (map process-fn tables))
        (progress-fn :end :dfd))))
   ([progress-fn] (dump-table-definitions no-cache progress-fn)))
+
+(defn list-sensitive-field-candidates
+  "Dumps field definitions of tables from the given schema.
+  progress-fn is called at the following stages of the execution:
+  * :start - at the beginning of the exectuion.
+  * :cached-sensitive-field-candidate schema-name table-name field-name [sensitive-data*] - for each cached result.
+  * :sensitive-field-candidate schema-name table-name field-name sensitive-data - sensitive-data is a list of possible sensitve-data types.
+  * :end - at the end of the execution."
+  ([cache-fn progress-fn]
+   (sql/with-db-connection [con db/pool] 
+     (let [cache-key (fn[table] (let [{:keys [table_schem table_name]} table]
+                                   (:sensitive-field-candidate table_schem table_name)))
+           process-fn (fn[table]
+                        (if-let [res (cache-fn (cache-key table))] 
+                          (doall (map #(apply progress-fn :cached-sensitive-field-candidate (:table_schem table) (:table_name table) %) res))
+                          (let [fields-with-data-names (pair-fields-with-data-names (db/get-fields (table :table_name)))
+                                fields-with-data-names (map #(vec [(:column_name (first %)) (second %)]) fields-with-data-names)]
+                            (cache-fn (cache-key table) fields-with-data-names)
+                            (doall (map #(progress-fn :sensitive-field-candidate 
+                                               (:table_schem table)
+                                               (:table_name table)
+                                               (first %)
+                                               (second %)) fields-with-data-names)))))]
+       (progress-fn :start)
+       (doall (map process-fn (row-counted-tables cache-fn)))
+       (progress-fn :end))))
+  ([] list-sensitive-field-candidates no-cache nil-progress)
+  ([progress-fn] list-sensitive-field-candidates no-cache progress-fn))

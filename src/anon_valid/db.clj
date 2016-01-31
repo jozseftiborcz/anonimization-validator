@@ -16,6 +16,11 @@
 ;; connection options
 (def ^:dynamic *command-options* {})
 
+(defn connection?
+  "Returns true if the parameter is a db connection"
+  [c]
+  (and (map? c) (:connection c)))
+
 (defn default-port 
   "Returns the default database port"
   [db-type]
@@ -145,9 +150,12 @@
   "Returns the fields of either a table or every table."
   ([] (get-fields nil))
   ([con-or-table] 
-   (if (or (string? con-or-table) (nil? con-or-table)) 
+   (cond
+     (or (string? con-or-table) (nil? con-or-table)) 
      (sql/with-db-connection [con pool] (doall (get-fields con con-or-table)))
-     (get-fields con-or-table nil)))
+     (connection? con-or-table)
+     (get-fields con-or-table nil)
+     :else nil))
   ([con table] 
    (resultset-seq (.getColumns (.getMetaData (:connection con)) 
                                nil 

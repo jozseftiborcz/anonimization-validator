@@ -112,7 +112,7 @@
      (remove nil? result))))
 
 (defn s-data*filter-values-by-max
-  "Returns a seq of sensitive values not longer than max-length. 
+  "Returns a seq of sensitive value types not longer than max-length. 
   If data-name is nil the function behaves as if called with max-length parameter only."
   ([data-name max-length]
    (if data-name

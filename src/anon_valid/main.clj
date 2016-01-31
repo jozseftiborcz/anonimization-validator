@@ -138,8 +138,11 @@
 (command trc row-counts "Count the number of rows in tables"
   (core/table-row-counts cache std-progress))
 
-(command sat sample-tables "Sample suspected fields of tables"
+(command ssfn sample-sensitive-field-names "Sample sensitive field names"
   (core/sample-sensitive-field-names))
+
+(command lsfc list-sensitive-field-candidates "List fields which might contain sensitive values"
+  (core/list-sensitive-field-candidates cache std-progress))
 
 (defn dfd-progress[]
   (let [first-row? (atom false)]
