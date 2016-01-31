@@ -142,13 +142,6 @@
          ;;         tables (filter #(re-find #"JOBS" (:table_name %))  tables)
          cache-key (fn[result] (let [{:keys [table_schem table_name]} result]
                      [:table-sensitivity table_schem table_name]))
-         not-sensitive-table-x (fn[table-def] 
-                               (let [v (c/sensitive-table (db/exact-table-name table-def))]
-                                 (if (nil? v)
-                                   (if (contains-sensitive-value? con table-def)
-                                     (do (progress-fn :sensitive-table (db/exact-table-name table-def)) true)
-                                     (do (progress-fn :not-sensitive-table (db/exact-table-name table-def)) false))
-                                   (= :sensitive-table v))))
          sensitivity-marker (fn[table] 
                               (if-let [res (cache-fn (cache-key table))]
                                 (do 
@@ -167,8 +160,7 @@
   ([cache-fn progress-fn]
    (sql/with-db-connection [con db/pool]
                            (doall (mark-tables-sensitivity con cache-fn progress-fn))))
-  ([]
-   (mark-tables-sensitivity no-cache nil-progress)))
+  ([] (mark-tables-sensitivity no-cache nil-progress)))
 
 (defn scan-one-for-fields-with-sensitive-values
   "Scans one table for sensitive fields"
@@ -280,14 +272,14 @@
            process-fn (fn[table]
                         (if-let [res (cache-fn (cache-key table))] 
                           (doall (map #(apply progress-fn :cached-sensitive-field-candidate (:table_schem table) (:table_name table) %) res))
-                          (let [fields-with-data-names (pair-fields-with-data-names (db/get-fields (table :table_name)))
-                                fields-with-data-names (map #(vec [(:column_name (first %)) (second %)]) fields-with-data-names)]
-                            (cache-fn (cache-key table) fields-with-data-names)
+                          (let [field-data-name-pairs (pair-fields-with-data-names (db/get-fields (table :table_name)))
+                                field-data-name-pairs (map #(vec [(:column_name (first %)) (second %)]) field-data-name-pairs)]
+                            (cache-fn (cache-key table) field-data-name-pairs)
                             (doall (map #(progress-fn :sensitive-field-candidate 
                                                (:table_schem table)
                                                (:table_name table)
                                                (first %)
-                                               (second %)) fields-with-data-names)))))]
+                                               (second %)) field-data-name-pairs)))))]
        (progress-fn :start)
        (doall (map process-fn (row-counted-tables cache-fn)))
        (progress-fn :end))))
