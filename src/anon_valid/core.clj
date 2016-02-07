@@ -162,38 +162,6 @@
                            (doall (mark-tables-sensitivity con cache-fn progress-fn))))
   ([] (mark-tables-sensitivity no-cache nil-progress)))
 
-(defn scan-one-for-fields-with-sensitive-values
-  "Scans one table for sensitive fields"
-  [con progress-fn table-def] 
-  (let [fields (db/get-fields con (:table_name table-def))
-        flds-data-name (pair-fields-with-data-names fields)
-        cached-field (fn[[field data-name]] 
-                       (if (nil? (c/field-sensitive-to-data-name? field data-name))
-                         true
-                         false))
-        flds-data-name (filter cached-field flds-data-name)
-        field-scan (fn[field data-name] 
-                      (let [field-with-values (map-fields-to-values data-name (list field))
-                            query-string (db/qb*verify-table-contains-sensitive-data 
-                                           (db/exact-table-name table-def) 
-                                           field-with-values)]
-                        (if-not (empty? field-with-values) 
-                          (sql/query con query-string))))
-        map-fn (fn[[field data-name :as fld-data-name]]
-                 (let [result (field-scan field data-name)
-                       result-fn (fn [x] (->> 
-                                           x
-                                           (map (keyword (string/lower-case (:column_name field)))) 
-                                           distinct 
-                                           (map #(str "'" % "'"))))]
-                   (if (> (count result) 0)
-                     (do (progress-fn 
-                           :sensitive-field 
-                           (db/exact-table-name field) 
-                           (:column_name field) data-name (result-fn result)) 
-                       fld-data-name))))]
-  (doall (remove nil? (map map-fn flds-data-name)))))
-
 (defn scan-one-field-for-sensitive-value
   "Scans one field for sensitive data, returns *resutl-set-limit* number of sample."
   [field sensitive-data] 
@@ -233,23 +201,6 @@
   ([] (list-sensitive-field-candidates no-cache nil-progress (non-empty-tables no-cache)))
   ([progress-fn] (list-sensitive-field-candidates no-cache progress-fn (non-empty-tables no-cache)))
   ([cache-fn progress-fn] (list-sensitive-field-candidates cache-fn progress-fn (non-empty-tables cache-fn))))
-
-(defn scan-fields-with-sensitive-values-x
-  "Scans database for table fields with sensitive values.
-  progress-fn is called at the following stages of the scan:
-  * :start table-count - at the beginning of scan returning the number of tables.
-  * :sensitive-table table-name - the table contains sensitive data
-  * :not-sensitive-table table-name - the table doesn't contain sensitive data
-  * :sensitive-field table-name field-name data-name examples - table's field contains values from data name (plus some examples)"
-  ([cache-fn progress-fn table-finder-fn]
-   (sql/with-db-connection [con db/pool]
-     (doall (map #(scan-one-for-fields-with-sensitive-values con progress-fn %) (table-finder-fn con cache-fn progress-fn)))))
-  ([cache-fn progress-or-table-def]
-   (if (fn? progress-or-table-def)
-     (scan-fields-with-sensitive-values-x cache-fn progress-or-table-def mark-tables-sensitivity)
-     (scan-fields-with-sensitive-values-x cache-fn nil-progress (fn[& args] progress-or-table-def))))
-  ([progress-or-table-def] 
-   (scan-fields-with-sensitive-values-x no-cache progress-or-table-def)))
 
 (defn scan-fields-with-sensitive-values
   "Scans database for table fields with sensitive values.
