@@ -114,22 +114,23 @@
   (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info args))
   (if-not (#{:start :end} stage) (write-result (string/join ";" args))))
 
-(defn- sf-progress[]
+(defn- field-progress[out-fields]
   (let [first-row? (atom true)
-        out-fields '(table_schem table_name column_name sensitive-data sample)]
+        fld-count (dec (count out-fields))]
     (fn [stage & args] 
       (if @first-row?
         (do (reset! first-row? false)
-          (write-result (string/join ";" out-fields))))
-      (let [log-str (fn[x] (let [{:keys [table_schem table_name column_name]} (first x)
-                                 sensitive-data (second x)
-                                 sample (nth x 2)]
-                             (list table_schem table_name column_name sensitive-data sample)))]
+          (write-result (str "schema;table-name;column-name;" (string/join ";" out-fields)))))
+      (let [rest-str (apply string/join "," (nthrest (rest args) fld-count))
+            log-str (fn[x] (let [{:keys [table_schem table_name column_name]} (first x)]
+                             (flatten (list table_schem table_name column_name 
+                                            (take fld-count (rest args)) 
+                                            rest-str))))]
         (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info (log-str args)))
         (if-not (#{:start :end} stage) (write-result (string/join ";" (log-str args))))))))
 
 (command sf scan-fields "Searching for fields with sensitive content"
-  (core/scan-fields-with-sensitive-values cache (sf-progress)))
+  (core/scan-fields-with-sensitive-values cache (field-progress ["sensitive-data" "sample"])))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
@@ -156,7 +157,7 @@
   (core/sample-sensitive-field-names))
 
 (command lsfc list-sensitive-field-candidates "List fields which might contain sensitive values"
-  (core/list-sensitive-field-candidates cache std-progress))
+  (core/list-sensitive-field-candidates cache (field-progress ["sensitive-data"])))
 
 (defn dfd-progress[]
   (let [first-row? (atom false)]

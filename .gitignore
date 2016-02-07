@@ -11,4 +11,6 @@ pom.xml.asc
 *.swo
 *.cache
 *.res
+tags
+test_command.txt
 *.cache.bkp
