@@ -11,8 +11,18 @@
   (:require [bultitude.core :as b]
             [clojure.string :as s]
             [clojure.tools.logging :as log] 
+            [clojure.edn :as edn]
             [clojure.java.io :as io])
-  (:import (java.io PushbackReader)))
+  (:import (java.io PushbackReader) ))
+  ;(:import (java.io PushbackReader) (java.net ConnectException)))
+
+(def s-fields
+  (atom #{}))
+
+(def s-data
+  (atom {}))
+
+(def ^:dynamic *sdata-coll* nil) ;; actual sdata collection 
 
 (defn load-definitions 
   "Loads definition from standard namespace"
@@ -56,19 +66,23 @@
     false))
 
 (defn load-sdata
-  "Loads sensitive data definition files"
+  "Loads sensitive data definition from files or from sdata server (url)"
   [dir-or-file]
-  (for [f (file-seq (io/file dir-or-file))
-        :when (and (.isFile f) (.canRead f) (.endsWith (.getName f) ".sdata"))]
-    (load-sdata-file f)))
-
-(def s-fields
-  (atom #{}))
-
-(def s-data
-  (atom {}))
-
-(def ^:dynamic *sdata-coll* nil) ;; actual sdata collection 
+  (if (.startsWith dir-or-file "http")
+    (if-let [result (try (edn/read-string (slurp dir-or-file))
+                      (catch java.net.ConnectException e#
+                        nil))]
+      (do
+        (reset! s-data (result :s-data))
+        (reset! s-fields (result :s-fields))
+        (log/info "loading sdata from url" dir-or-file)
+        (list true))
+      (do
+        (log/error "Cannot load sdata from url")
+        (list false)))
+    (for [f (file-seq (io/file dir-or-file))
+          :when (and (.isFile f) (.canRead f) (.endsWith (.getName f) ".sdata"))]
+      (load-sdata-file f))))
 
 (defn sdata-definition
   "Namespace of data collection definitions. It must be the first non-comment form of sdata files."

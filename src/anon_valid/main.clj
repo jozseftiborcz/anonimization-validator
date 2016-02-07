@@ -8,7 +8,7 @@
             [clojure.java.io :as io]
             [clojure.tools.cli :as cli]
             [anon-valid.field-handler :as fh]
-;            [anon-valid.cache :as c]
+            [anon-valid.sdata-server :as sds]
             [anon-valid.core :as core]
             [anon-valid.db :as db]))
 
@@ -62,6 +62,7 @@
     :assoc-fn (fn[m k _] (assoc m :cache-file :default-cache-file))]
    ["-v" nil "Verbosity levels, can be specified multiple times: (-vvvv) no info and no log (-vvv) no info and log, (-vv) info and log, -v debug and log" :id :verbosity :default 0
     :assoc-fn (fn [m k _] (update-in m [k] inc))]
+   ["-o" "--server-port" "port used to listen on" :id :server-port :default 8080]
    ["-g" "--generate SCRIPTNAME" "Generate anonimization script" :id :script-name]
    ["-V" "--version" "Print program version" :id :version ]])
 
@@ -114,14 +115,14 @@
   (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info args))
   (if-not (#{:start :end} stage) (write-result (string/join ";" args))))
 
-(defn- field-progress[out-fields]
+(defn- field-progress[ & out-fields]
   (let [first-row? (atom true)
         fld-count (dec (count out-fields))]
     (fn [stage & args] 
       (if @first-row?
         (do (reset! first-row? false)
           (write-result (str "schema;table-name;column-name;" (string/join ";" out-fields)))))
-      (let [rest-str (apply string/join "," (nthrest (rest args) fld-count))
+      (let [rest-str (string/join "," (flatten (nthrest (rest args) fld-count)))
             log-str (fn[x] (let [{:keys [table_schem table_name column_name]} (first x)]
                              (flatten (list table_schem table_name column_name 
                                             (take fld-count (rest args)) 
@@ -130,7 +131,7 @@
         (if-not (#{:start :end} stage) (write-result (string/join ";" (log-str args))))))))
 
 (command sf scan-fields "Searching for fields with sensitive content"
-  (core/scan-fields-with-sensitive-values cache (field-progress ["sensitive-data" "sample"])))
+  (core/scan-fields-with-sensitive-values cache (field-progress "sensitive-data" "sample")))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
@@ -157,7 +158,7 @@
   (core/sample-sensitive-field-names))
 
 (command lsfc list-sensitive-field-candidates "List fields which might contain sensitive values"
-  (core/list-sensitive-field-candidates cache (field-progress ["sensitive-data"])))
+  (core/list-sensitive-field-candidates cache (field-progress "sensitive-data")))
 
 (defn dfd-progress[]
   (let [first-row? (atom false)]
@@ -201,6 +202,9 @@
 (command dtd dump-table-definitions 
          "Dump tables of schema" 
          (core/dump-table-definitions cache dtd-progress))
+
+(command sds sample-data-server "Sensitive-data-server"
+  (sds/start-sdata-server (*options* :server-port)))
 
 (defn execute-command [options]
   (let [cmd-name (symbol (:execute-command options))]

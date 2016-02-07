@@ -8,7 +8,7 @@
             [clojure.string :as string]
             [clojure.term.colors :refer :all]
             [anon-valid.db :as db]
-            [anon-valid.cache :as c]
+;            [anon-valid.cache :as c]
             [anon-valid.field-handler :as fh]))
 
 (defn- full-table-name [table-def]
