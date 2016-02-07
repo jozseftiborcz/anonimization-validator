@@ -30,7 +30,7 @@
      (swap! commands conj (resolve '~cmd-long-name))))
 
 (defn command-descriptions[]
-  (apply str (map #(format "  %-30s %s\n" 
+  (apply str (map #(format "  %-40s %s\n" 
                            (str (:name (meta %)) " (" (:short-command-name (meta %)) ")") 
                            (:doc (meta %))) @commands)))
 
@@ -62,7 +62,7 @@
     :assoc-fn (fn[m k _] (assoc m :cache-file :default-cache-file))]
    ["-v" nil "Verbosity levels, can be specified multiple times: (-vvvv) no info and no log (-vvv) no info and log, (-vv) info and log, -v debug and log" :id :verbosity :default 0
     :assoc-fn (fn [m k _] (update-in m [k] inc))]
-   ["-o" "--server-port" "port used to listen on" :id :server-port :default 8080]
+   ["-o" "--server-port PORT" "port used to listen on" :id :server-port :default 8080]
    ["-g" "--generate SCRIPTNAME" "Generate anonimization script" :id :script-name]
    ["-V" "--version" "Print program version" :id :version ]])
 
@@ -203,7 +203,7 @@
          "Dump tables of schema" 
          (core/dump-table-definitions cache dtd-progress))
 
-(command sds sample-data-server "Sensitive-data-server"
+(command sds sensitive-data-server "Sensitive-data-server"
   (sds/start-sdata-server (*options* :server-port)))
 
 (defn execute-command [options]
