@@ -6,7 +6,7 @@
 
 (sensitive-fields "name" "phone" "address" "card(?:_no)?" "birth" "family" "first_?name" "last_?name" "expiration_date" "CVC" )
 
-(sensitive-data "Sensitive #1" :like "visa" "password")
+(sensitive-data "Sensitive #1" :like "visa" "password" "supp1")
 (sensitive-data "Sensitive #1" :exact "budapest")
 (sensitive-data "Sensitive #2" :exact "1234567890")
 (sensitive-data "JobTitle" :like "vice president")

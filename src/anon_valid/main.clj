@@ -114,8 +114,22 @@
   (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info args))
   (if-not (#{:start :end} stage) (write-result (string/join ";" args))))
 
+(defn- sf-progress[]
+  (let [first-row? (atom true)
+        out-fields '(table_schem table_name column_name sensitive-data sample)]
+    (fn [stage & args] 
+      (if @first-row?
+        (do (reset! first-row? false)
+          (write-result (string/join ";" out-fields))))
+      (let [log-str (fn[x] (let [{:keys [table_schem table_name column_name]} (first x)
+                                 sensitive-data (second x)
+                                 sample (nth x 2)]
+                             (list table_schem table_name column_name sensitive-data sample)))]
+        (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info (log-str args)))
+        (if-not (#{:start :end} stage) (write-result (string/join ";" (log-str args))))))))
+
 (command sf scan-fields "Searching for fields with sensitive content"
-  (core/scan-fields-with-sensitive-values cache std-progress))
+  (core/scan-fields-with-sensitive-values cache (sf-progress)))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
