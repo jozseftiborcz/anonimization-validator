@@ -10,7 +10,7 @@
          '[anon-valid.field-handler :as fh])
 
 ;; global default db-type for the actual db session: mysql, oracle, mssql
-(def ^:dynamic *db-type* :mysql)
+(def ^:dynamic *db-type* :oracle)
 ;; default number of rows returned
 (def ^:dynamic *result-set-limit* 5)
 ;; connection options
@@ -80,7 +80,9 @@
   (def pool (pool/make-datasource-spec {:subprotocol "oracle"
                                         :user "dbtest"
                                         :password "dbtest"
-                                        :subname "thin:@localhost:1521/orcl"})))
+                                        :subname "thin:@localhost:1521/orcl"}))
+  (def ^:dynamic *command-options* {:schema-name "DBTEST"}))
+
 (defn test-mysql-pool 
   "Testing database connection for mysql"
   []
@@ -137,11 +139,12 @@
   "Returns a seq of tables visible to current user"
   ([] (sql/with-db-connection [con pool] (doall (get-tables con))))
   ;([con] (doall (resultset-seq (.getTables (.getMetaData (:connection con)) nil nil nil (into-array ["TABLE" "VIEW"]))))))
-  ([con] (let [results (resultset-seq 
+  ([con] (get-tables con nil))
+  ([con table-pattern] (let [results (resultset-seq 
                          (.getTables (.getMetaData (:connection con)) 
                                      nil 
                                      (if-let [opt (:schema-name *command-options*)] opt nil)
-                                     nil (into-array ["TABLE"])))]
+                                     table-pattern (into-array ["TABLE"])))]
            (filter #(or (not oracle?) 
                         (not (some #{(:table_schem %)} '("SYS" "SYSTEM")))) 
                    results))))
@@ -164,17 +167,19 @@
 
 ;; {:table_cat "xxx", :table_schem nil, :table_name "jos_vm_product", :column_name "product_id", :data_type 4, :type_name "INT", :column_size 10, :buffer_length 65535, :decimal_digits 0, :num_prec_radix 10, :nullable 0, :remarks "", :column_def nil, :sql_data_type 0, :sql_datetime_sub 0, :char_octet_length nil, :ordinal_position 1, :is_nullable "NO", :scope_catalog nil, :scope_schema nil, :scope_table nil, :source_data_type nil, :is_autoincrement "YES"}
 
-(defn alphanum? [x] (re-matches #"\w+" x))
+(defn alphanum? [x] (re-matches #"[\.\w]+" x))
 
 ;; query builders
 ;; The following codes return specific queries used in the program
 (defn- qb*limit-result-set 
   "Result set limiter. By passing a statement string it converts to limits its result to predefined *result-set-limit*"
-  [select-stmt]
-  (case *db-type*
-    :mysql (str select-stmt " limit " *result-set-limit*)
-    :oracle (str "select * from (" select-stmt ") where rownum <= " *result-set-limit*)
-    :mssql select-stmt)) ;; TODO
+  ([select-stmt limit]
+   (case *db-type*
+     :mysql (str select-stmt " limit " limit)
+     :oracle (str "select * from (" select-stmt ") where rownum <= " limit)
+     :mssql select-stmt)) ;; TODO
+  ([select-stmt]
+   (qb*limit-result-set select-stmt *result-set-limit*)))
 
 (defn qb*row-count
   "Queries the number of rows in a table"
@@ -188,9 +193,12 @@
 
 (defn qb*sample-field 
   "Takes a sample of values from a given field"
-  [table-name field-name]
-  {:pre [(alphanum? table-name) (alphanum? field-name)]}
-  [(qb*limit-result-set (str "select distinct " field-name " as result from " table-name " where ? is not null and ? != ''")) field-name field-name])
+  ([table-name field-name sample-size]
+   {:pre [(alphanum? table-name) (alphanum? field-name)]}
+   [(qb*limit-result-set (str "select distinct " field-name " as result from " table-name " where ? is not null") sample-size) field-name])
+  ([table-name field-name]
+   (qb*sample-field table-name field-name *result-set-limit*)))
+
 
 (defn qb*verify-table-contains-sensitive-data 
   "Builds a query to verify if fields contain the values given. fields-with-values is a seq of (field-name (possible values...)"

@@ -44,9 +44,10 @@
    ["-m" "--mode MODENAME" "Call program with one of the pre-configured mode" :id :mode :default :none]
    ["-d" "--db-name DATABASE_NAME" "Database name" :id :database-name]
    ["-s" "--schema-name SCHEMA_NAME" "Schema name" :id :schema-name]
+   ["-S" "--sample-size SAMPLE_SIZE" "Randomly selected number of field values from table to search for sensitive content" :id :sample-size :default 10]
    ["-D" "--data-file DATA_FILE_OR_DIRECTORY" "Loads sensitive data definitions from file or directory" :id :data-file ]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
-   ["-t" "--db-type TYPE" "Type of database, default is mysql" :id :db-type :default :mysql
+   ["-t" "--db-type TYPE" "Type of database, default is oracle" :id :db-type :default :oracle
     :parse-fn #(keyword %)
     :validate-fn #(#{:mysql :oracle :mssql} %)]
    ["-P" "--password PASSWORD" "Database password, if not given asked from the command line" :id :pwd]
@@ -130,8 +131,11 @@
         (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info (log-str args)))
         (if-not (#{:start :end} stage) (write-result (string/join ";" (log-str args))))))))
 
-(command sf scan-fields "Searching for fields with sensitive content"
-  (core/scan-fields-with-sensitive-values cache (field-progress "sensitive-data" "sample")))
+(command sf scan-fields "Full table scan of fields for sensitive content"
+  (core/scan-fields-for-sensitive-values cache (field-progress "sensitive-data" "sample")))
+
+(command ssf sampled-scan-fields "Scan fields based for sensitive content based on field sample"
+  (core/sampled-scan-fields-for-sensitive-values cache (field-progress "")))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
@@ -148,7 +152,8 @@
           (if (= stage :table-sensitivity) (log/info args))
           (write-result (string/join ";" args)))
         nil))))
-(command st sensitive-tables "Searching for tables with sensitive content"
+
+(command st sensitive-tables "Full table scan of tables for sensitive content"
   (core/mark-tables-sensitivity cache (st-progress)))
 
 (command trc row-counts "Count the number of rows in tables"
@@ -158,7 +163,7 @@
   (core/sample-sensitive-field-names))
 
 (command lsfc list-sensitive-field-candidates "List fields which might contain sensitive values"
-  (core/list-sensitive-field-candidates cache (field-progress "sensitive-data")))
+  (core/progressed-sensitive-field-candidates cache (field-progress "sensitive-data")))
 
 (defn dfd-progress[]
   (let [first-row? (atom false)]
@@ -278,6 +283,7 @@
   [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (def ^:dynamic *options* options)
+    (core/set-options options)
     (if (:version options)
       (exit 0 (str "program version " version)))
     (cond

@@ -13,9 +13,9 @@
 
 (defroutes app-routes
   (GET "/" request (do 
-                (log/info "Serving sdata to" (request :remote-addr))
-                (-> (r/response (pr-str {:s-data @fh/s-data :s-fields @fh/s-fields}))
-                  (r/content-type "text/plain; charset=utf-8"))))
+    (log/info "Serving sdata to" (request :remote-addr))
+    (-> (r/response (pr-str {:s-data @fh/s-data :s-fields @fh/s-fields}))
+      (r/content-type "text/plain; charset=utf-8"))))
   (route/not-found "Not Found"))
 
 (def app

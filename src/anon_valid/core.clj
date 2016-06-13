@@ -11,6 +11,11 @@
 ;            [anon-valid.cache :as c]
             [anon-valid.field-handler :as fh]))
 
+;; connection options
+(def ^:dynamic *command-options* {:sample-size 10})
+(defn set-options[options]
+  (def ^:dynamic *command-options* options))
+
 (defn- full-table-name [table-def]
   (let [{:keys [table_schem table_name]} table-def]
     (if table_schem (str table_schem "." table_name) table_name)))
@@ -39,7 +44,7 @@
 (defn- row-counted-tables
   [cache-fn]
   (let [tables (db/get-tables)
-        cache-key (fn[table] [:table-row-count (full-table-name table)])
+        cache-key (fn[table] [:table-row-count full-table-name table])
         res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))]
     (map (cached-row-counter cache-fn cache-key res-fn) tables)))
 
@@ -64,11 +69,11 @@
       (doall 
         (map #(apply progress-fn 
                      (if (% :cached) :cached-row-count :row-count)
-                     (res-fn %)) non-empty-tables))
+                     (res-fn %)) (non-empty-tables cache-fn)))
       (progress-fn :end
                    (hash-map
                      :scanned-tables (count (row-counted-tables cache-fn)) 
-                     :non-empty-tables (count non-empty-tables))))))
+                     :non-empty-tables (count (non-empty-tables cache-fn)))))))
 
 (defn sensitive-fields 
   ([] (sql/with-db-connection [con db/pool] (doall (sensitive-fields con))))
@@ -82,9 +87,13 @@
     (let [fields (transduce (comp (db/fs*min-length 5) (db/fs*sensitive)) conj (db/get-fields con))]
       (into {} (map #(vector (key %) (map :column_name (val %))) (group-by #(:table_name %) fields))))))
 
-(defn sample-field [con table field]
-  (filter #(or (integer? %) (not(empty? %))) 
-          (map :result (sql/query con (db/qb*sample-field table field)))))
+(defn sample-field 
+  ([con table field sample-size]
+   (filter #(or (integer? %) (not(empty? %))) 
+           (map :result (sql/query con (db/qb*sample-field table field sample-size)))))
+  ([con table field]
+   (filter #(or (integer? %) (not(empty? %))) 
+           (map :result (sql/query con (db/qb*sample-field table field))))))
 
 (defn sample-fields [con table fields]
   (let [sample (map #(vector % (sample-field con table %)) fields)
@@ -112,7 +121,7 @@
     (remove nil? (reduce values-for-field () (list fields)))))
   ([fields]
    (map-fields-to-values nil fields)))
-                                    
+      
 (defn pair-fields-with-data-names
   "Creates a seq of (field data-name) pairs suitable for data matching."
   [fields]
@@ -178,7 +187,7 @@
           result (extract-field (sql/query con query-string))]
       result)))
 
-(defn list-sensitive-field-candidates
+(defn progressed-sensitive-field-candidates
   "Dumps field definitions of tables from the given schema.
   progress-fn is called at the following stages of the execution:
   * :start - at the beginning of the exectuion.
@@ -188,7 +197,7 @@
   ([cache-fn progress-fn table-list]
    (sql/with-db-connection [con db/pool] 
      (let [cache-key (fn[table] (let [{:keys [table_schem table_name]} table]
-                                   (:sensitive-field-candidate table_schem table_name)))
+                                   [:sensitive-field-candidate table_schem table_name]))
            process-fn (fn[table]
                         (if-let [res (cache-fn (cache-key table))] 
                           (doall (map #(apply progress-fn :cached-sensitive-field-candidate %) res))
@@ -198,12 +207,13 @@
        (progress-fn :start)
        (doall (map process-fn table-list))
        (progress-fn :end))))
-  ([] (list-sensitive-field-candidates no-cache nil-progress (non-empty-tables no-cache)))
-  ([progress-fn] (list-sensitive-field-candidates no-cache progress-fn (non-empty-tables no-cache)))
-  ([cache-fn progress-fn] (list-sensitive-field-candidates cache-fn progress-fn (non-empty-tables cache-fn))))
+  ([] (progressed-sensitive-field-candidates no-cache nil-progress (non-empty-tables no-cache)))
+  ([progress-fn] (progressed-sensitive-field-candidates no-cache progress-fn (non-empty-tables no-cache)))
+  ([cache-fn progress-fn] (progressed-sensitive-field-candidates cache-fn progress-fn (non-empty-tables cache-fn))))
 
-(defn scan-fields-with-sensitive-values
-  "Scans database for table fields with sensitive values.
+(defn scan-fields-for-sensitive-values
+  "Scans database for table fields with sensitive values. Unlike sampled-scan-fields-for-sensitive-values this
+  function performs full table scans so it is usefull for small tables only.
   progress-fn is called at the following stages of the scan:
   * :start table-count - at the beginning of scan returning the number of tables.
   * :sensitive-field field data-name sample - table's field contains values from data name (plus some examples)"
@@ -222,14 +232,55 @@
                                    (cache-fn (cache-key field sensitive-data) [(not(empty? sample)) sample])
                                    (if-not (empty? sample) (progress-fn :sensitive-field field sensitive-data sample))
                                    sample)))))]
-     (doall (list-sensitive-field-candidates cache-fn field-scanner table-list))))
+     (doall (progressed-sensitive-field-candidates cache-fn field-scanner table-list))))
   ([cache-fn progress-or-table-def]
    (cond
-     (fn? progress-or-table-def) (scan-fields-with-sensitive-values cache-fn progress-or-table-def (non-empty-tables cache-fn)) 
-     (string? progress-or-table-def) (scan-fields-with-sensitive-values cache-fn nil-progress (list progress-or-table-def))
-     (seq? progress-or-table-def) (scan-fields-with-sensitive-values cache-fn nil-progress progress-or-table-def)))
+     (fn? progress-or-table-def) (scan-fields-for-sensitive-values cache-fn progress-or-table-def (non-empty-tables cache-fn)) 
+     (string? progress-or-table-def) (scan-fields-for-sensitive-values cache-fn nil-progress (list progress-or-table-def))
+     (seq? progress-or-table-def) (scan-fields-for-sensitive-values cache-fn nil-progress progress-or-table-def)))
   ([progress-or-table-def] 
-   (scan-fields-with-sensitive-values no-cache progress-or-table-def)))
+   (scan-fields-for-sensitive-values no-cache progress-or-table-def)))
+
+(defn sdata-candidates[field-def]
+  (if (db/stringish? (:type_name field-def))
+    (if-let [filtered (fh/s-data*data-names-by-max (:column_size field-def))]
+      filtered)))
+
+(defn sampled-scan-fields-for-sensitive-values
+  ([cache-fn progress-fn table-def]
+   (let [fields (db/get-fields (table-def :table_name))
+         fields (remove #(nil? (sdata-candidates %)) fields)
+         sample-field (fn[field-def] 
+                        (sql/with-db-connection [con db/pool]
+                                                (into #{} 
+                                                      (remove nil?
+                                                        (map :result 
+                                                             (sql/query con 
+                                                                        (db/qb*sample-field 
+                                                                          (full-table-name table-def) 
+                                                                          (field-def :column_name)
+                                                                          (*command-options* :sample-size))))))))
+         sample-collector (fn sample-collector-fn[field-list result]
+                   (if-let [field-def (first field-list)]
+                     (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))
+                     result))
+         validate-fn (fn[[field-def samples]]
+                       (let [data-names (sdata-candidates field-def)
+                             xxx (println field-def)
+                             xxx (println data-names)
+                             xxx (println samples)
+                             collect-result (map #(list % (fh/s-data*match-sample samples %)) data-names)
+                             collect-result (filter (fn[[data-name matches]] (empty? matches)) collect-result)]
+                         (if-not (empty? collect-result)
+                           [:sampled-match field-def collect-result])))]
+     (map validate-fn (sample-collector fields {}))))
+  ([cache-fn progress-fn]
+   (doall (map #(sampled-scan-fields-for-sensitive-values cache-fn progress-fn %) (non-empty-tables cache-fn))))
+  ([cache-fn]
+   (sampled-scan-fields-for-sensitive-values cache-fn nil-progress))
+  ([]
+   (sampled-scan-fields-for-sensitive-values no-cache)))
+
 
 (defn dump-table-definitions
   "Dumps table names from the given schema.
