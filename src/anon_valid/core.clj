@@ -12,7 +12,7 @@
             [anon-valid.field-handler :as fh]))
 
 ;; connection options
-(def ^:dynamic *command-options* {:sample-size 10})
+(def ^:dynamic *command-options* {:sample-size 1000})
 (defn set-options[options]
   (def ^:dynamic *command-options* options))
 
@@ -44,7 +44,7 @@
 (defn- row-counted-tables
   [cache-fn]
   (let [tables (db/get-tables)
-        cache-key (fn[table] [:table-row-count full-table-name table])
+        cache-key (fn[table] [:table-row-count (full-table-name table)])
         res-fn (fn[table] (reduce #(conj %1 (table %2)) [] [:table_schem :table_name :row_count]))]
     (map (cached-row-counter cache-fn cache-key res-fn) tables)))
 
@@ -252,30 +252,30 @@
          fields (remove #(nil? (sdata-candidates %)) fields)
          sample-field (fn[field-def] 
                         (sql/with-db-connection [con db/pool]
-                                                (into #{} 
-                                                      (remove nil?
-                                                        (map :result 
-                                                             (sql/query con 
-                                                                        (db/qb*sample-field 
-                                                                          (full-table-name table-def) 
-                                                                          (field-def :column_name)
-                                                                          (*command-options* :sample-size))))))))
+                          (into #{} 
+                                (remove nil?
+                                        (map :result 
+                                             (sql/query con 
+                                                        (db/qb*sample-field 
+                                                          (full-table-name table-def) 
+                                                          (field-def :column_name)
+                                                          (*command-options* :sample-size))))))))
          sample-collector (fn sample-collector-fn[field-list result]
                    (if-let [field-def (first field-list)]
                      (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))
                      result))
          validate-fn (fn[[field-def samples]]
                        (let [data-names (sdata-candidates field-def)
-                             xxx (println field-def)
-                             xxx (println data-names)
-                             xxx (println samples)
+                ;             xxx (println "x1" samples data-names)
                              collect-result (map #(list % (fh/s-data*match-sample samples %)) data-names)
-                             collect-result (filter (fn[[data-name matches]] (empty? matches)) collect-result)]
+                 ;            xxx (println "x2" collect-result)
+                             collect-result (filter (fn[[data-name matches]] (not (empty? matches))) collect-result)]
                          (if-not (empty? collect-result)
+                           (progress-fn :sampled-match field-def (map #(if (= clojure.lang.LazySeq (type %)) (seq %) %) collect-result))
                            [:sampled-match field-def collect-result])))]
      (map validate-fn (sample-collector fields {}))))
   ([cache-fn progress-fn]
-   (doall (map #(sampled-scan-fields-for-sensitive-values cache-fn progress-fn %) (non-empty-tables cache-fn))))
+   (doall (remove nil? (apply concat (map #(sampled-scan-fields-for-sensitive-values cache-fn progress-fn %) (non-empty-tables cache-fn))))))
   ([cache-fn]
    (sampled-scan-fields-for-sensitive-values cache-fn nil-progress))
   ([]

@@ -9,6 +9,7 @@
 (fh/sensitive-data "Sensitive #1" :like "visa" "password" "supp1")
 (fh/sensitive-data "Sensitive #1" :exact "budapest")
 (fh/sensitive-data "Sensitive #2" :exact "1234567890")
+(fh/sensitive-data "Sensitive #3" :like #"supp2\d+")
 (fh/sensitive-data "JobTitle" :like "vice president")
 ;;(fh/anonimizator "JobTitle" :empty)
 ;;(fh/sensitive-data "Sens3" :regexp :any-of ".*bud.*")

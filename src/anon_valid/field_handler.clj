@@ -116,10 +116,13 @@
 ;;(defn s-data-length []
 ;;  (map s-data*min-length (keys s-data)))
 
+(defn pattern? [s] (= java.util.regex.Pattern (type s)))
+
 (defn s-data*data-names-by-max
   "Returns data names which contains sensitive data definition of which length is up to max."
   ([data-name max-length] 
-   (let [result (filter #(<= (count (second %)) max-length) (partition 2 (@s-data data-name)))]
+   (let [result (filter #(or (pattern? (second %)) 
+                             (<= (count (second %)) max-length)) (partition 2 (@s-data data-name)))]
      (if (empty? result) nil data-name)))
   ([max-length]
    (let [result (map #(s-data*data-names-by-max % max-length) (keys @s-data))]
@@ -141,13 +144,10 @@
   "Returns a match from data-name which matches one of the pattern from sample, or nil otherwise."
   [samples data-name]
   (let [match-one (fn[match-type pattern sample] 
-                    (println "xxx" match-type "p" pattern "s" sample)
                     (case match-type
                       :exact (re-matches (re-pattern pattern) sample)
                       :like (re-find (re-pattern pattern) sample)))
         match-any (fn[sample]
-                    (println "yyy" sample)
-                    (println (partition 2 (@s-data data-name)))
-                    (not (empty? (filter (fn[[m p]] (not (empty? (match-one m p sample)))) (partition 2 (@s-data data-name))))))]
+                    (not (empty? (filter (fn[[mt p]] (not (empty? (match-one mt p sample)))) (partition 2 (@s-data data-name))))))]
     (take 5 (filter match-any samples))))
 

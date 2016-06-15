@@ -134,8 +134,8 @@
 (command sf scan-fields "Full table scan of fields for sensitive content"
   (core/scan-fields-for-sensitive-values cache (field-progress "sensitive-data" "sample")))
 
-(command ssf sampled-scan-fields "Scan fields based for sensitive content based on field sample"
-  (core/sampled-scan-fields-for-sensitive-values cache (field-progress "")))
+(command ssf sampled-scan-fields "Scan fields for sensitive content based on field samples"
+  (core/sampled-scan-fields-for-sensitive-values cache std-progress))
 
 (command tc test-connection "Test database connection"
   (log/info "success!"))
