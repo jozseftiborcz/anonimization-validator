@@ -261,18 +261,20 @@
                                                           (field-def :column_name)
                                                           (*command-options* :sample-size))))))))
          sample-collector (fn sample-collector-fn[field-list result]
-                   (if-let [field-def (first field-list)]
-                     (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))
-                     result))
+                            (if-let [field-def (first field-list)]
+                              (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))
+                              result))
          validate-fn (fn[[field-def samples]]
                        (let [data-names (sdata-candidates field-def)
                 ;             xxx (println "x1" samples data-names)
                              collect-result (map #(list % (fh/s-data*match-sample samples %)) data-names)
                  ;            xxx (println "x2" collect-result)
                              collect-result (filter (fn[[data-name matches]] (not (empty? matches))) collect-result)]
-                         (if-not (empty? collect-result)
-                           (progress-fn :sampled-match field-def (map #(if (= clojure.lang.LazySeq (type %)) (seq %) %) collect-result))
-                           [:sampled-match field-def collect-result])))]
+                         (if-not (empty? collect-result) 
+                           (do 
+                             (doall (map #(progress-fn :sampled-match field-def %) collect-result))
+                             [:sampled-match field-def collect-result]))))]
+     (progress-fn :sampling-table (full-table-name table-def))
      (map validate-fn (sample-collector fields {}))))
   ([cache-fn progress-fn]
    (doall (remove nil? (apply concat (map #(sampled-scan-fields-for-sensitive-values cache-fn progress-fn %) (non-empty-tables cache-fn))))))

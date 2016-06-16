@@ -44,7 +44,7 @@
    ["-m" "--mode MODENAME" "Call program with one of the pre-configured mode" :id :mode :default :none]
    ["-d" "--db-name DATABASE_NAME" "Database name" :id :database-name]
    ["-s" "--schema-name SCHEMA_NAME" "Schema name" :id :schema-name]
-   ["-S" "--sample-size SAMPLE_SIZE" "Randomly selected number of field values from table to search for sensitive content" :id :sample-size :default 10]
+   ["-S" "--sample-size SAMPLE_SIZE" "Randomly selected number of field values from table to search for sensitive content" :id :sample-size :default 1000]
    ["-D" "--data-file DATA_FILE_OR_DIRECTORY" "Loads sensitive data definitions from file or directory" :id :data-file ]
    ["-H" "--host HOST" "Database host" :id :host :default "localhost"]
    ["-t" "--db-type TYPE" "Type of database, default is oracle" :id :db-type :default :oracle
@@ -114,7 +114,12 @@
   "Used to display progress information on the stdout"
   [ stage & args] 
   (if-not (or (.startsWith (str stage) ":cached") (nil? args)) (log/info args))
-  (if-not (#{:start :end} stage) (write-result (string/join ";" args))))
+  (if (#{:sampled-match} stage) 
+    (let [field-def (first args)
+          {:keys [table_name column_name table_schem]} field-def
+          [data-name sample] (second args)]
+      (write-result (string/join ";" [table_schem table_name column_name data-name (string/join "," sample)])))
+    (if-not (#{:start :end} stage) (write-result (string/join ";" args)))))
 
 (defn- field-progress[ & out-fields]
   (let [first-row? (atom true)
