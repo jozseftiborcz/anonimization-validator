@@ -253,13 +253,14 @@
          sample-field (fn[field-def] 
                         (sql/with-db-connection [con db/pool]
                           (into #{} 
-                                (remove nil?
-                                        (map :result 
-                                             (sql/query con 
-                                                        (db/qb*sample-field 
-                                                          (full-table-name table-def) 
-                                                          (field-def :column_name)
-                                                          (*command-options* :sample-size))))))))
+                                (map string/lower-case 
+                                  (remove nil?
+                                    (map :result 
+                                      (sql/query con 
+                                        (db/qb*sample-field 
+                                        (full-table-name table-def) 
+                                        (field-def :column_name)
+                                        (*command-options* :sample-size)))))))))
          sample-collector (fn sample-collector-fn[field-list result]
                             (if-let [field-def (first field-list)]
                               (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))

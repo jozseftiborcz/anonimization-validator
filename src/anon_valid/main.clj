@@ -119,7 +119,7 @@
           {:keys [table_name column_name table_schem]} field-def
           [data-name sample] (second args)]
       (write-result (string/join ";" [table_schem table_name column_name data-name (string/join "," sample)])))
-    (if-not (#{:start :end} stage) (write-result (string/join ";" args)))))
+    (if-not (#{:start :end :sampling-table} stage) (write-result (string/join ";" args)))))
 
 (defn- field-progress[ & out-fields]
   (let [first-row? (atom true)
