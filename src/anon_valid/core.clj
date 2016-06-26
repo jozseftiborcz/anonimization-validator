@@ -1,6 +1,7 @@
 (ns anon-valid.core
   (:gen-class)
   (:import com.mchange.v2.c3p0.ComboPooledDataSource)
+  (:use clojure.set)
   (:require [clojure.java.jdbc :as sql] 
             [clojure.tools.logging :as log] 
             [jdbc.pool.c3p0 :as pool] 
@@ -11,6 +12,7 @@
 ;            [anon-valid.cache :as c]
             [anon-valid.field-handler :as fh]))
 
+
 ;; connection options
 (def ^:dynamic *command-options* {:sample-size 1000})
 (defn set-options[options]
@@ -18,7 +20,7 @@
 
 (defn- full-table-name [table-def]
   (let [{:keys [table_schem table_name]} table-def]
-    (if table_schem (str table_schem "." table_name) table_name)))
+    (if table_schem (str table_schem "." "\"" table_name "\"") (str "\"" table_name "\""))))
 
 ; Two special progress method for debugging
 (defn- nil-progress [stage & args] nil)
@@ -35,7 +37,7 @@
     (sql/with-db-connection [con db/pool] 
       (if-let [res (cache-fn (cache-key table))]
         (assoc table :cached true :row_count (res 2))
-        (let [table (assoc table 
+          (let [table (assoc table 
                            :row_count 
                            (biginteger (:result (first (sql/query con (db/qb*row-count (full-table-name table)))))))]
           (cache-fn (cache-key table) (res-fn table))
@@ -246,37 +248,50 @@
     (if-let [filtered (fh/s-data*data-names-by-max (:column_size field-def))]
       filtered)))
 
+(defn union-merge 
+  [& args]
+  ;(apply merge-with #(union (if (set? %1) %1 (set [%1])) (set [%2])) args)) 
+  (let [as-set (fn[g]
+                 (cond (set? g) g (seq? g) (into #{} g) :else (set [g])))]
+  (apply merge-with #(union (as-set %1) (as-set %2)) args))) 
+
 (defn sampled-scan-fields-for-sensitive-values
   ([cache-fn progress-fn table-def]
    (let [fields (db/get-fields (table-def :table_name))
          fields (remove #(nil? (sdata-candidates %)) fields)
+         result-field-to-colname (fn[field-def] 
+                                  (keyword (string/lower-case (:column_name field-def))))
+         ; the sample is returned as a hash where fields are sets of values
          sample-field (fn[field-def] 
                         (sql/with-db-connection [con db/pool]
-                          (into #{} 
-                                (map string/lower-case 
-                                  (remove nil?
-                                    (map :result 
-                                      (sql/query con 
-                                        (db/qb*sample-field 
-                                        (full-table-name table-def) 
-                                        (field-def :column_name)
-                                        (*command-options* :sample-size)))))))))
+                          (apply union-merge
+                            (sql/query con 
+                              (db/qb*sample-table
+                              (full-table-name table-def) 
+                              (field-def :column_name)
+                              (*command-options* :sample-size))))))
          sample-collector (fn sample-collector-fn[field-list result]
                             (if-let [field-def (first field-list)]
-                              (sample-collector-fn (rest field-list) (assoc result field-def (sample-field field-def)))
+                              (if (< (count (result (result-field-to-colname field-def))) 
+                                     (*command-options* :sample-size))
+                                (sample-collector-fn (rest field-list) (union-merge result (sample-field field-def)))
+                                (sample-collector-fn (rest field-list) result))
                               result))
+         ; change field names to field-defs as sample keys
+         result-names-to-fields (fn[fields]
+                                  (zipmap (map result-field-to-colname fields) fields))
          validate-fn (fn[[field-def samples]]
                        (let [data-names (sdata-candidates field-def)
-                ;             xxx (println "x1" samples data-names)
+                             ;xxx (println "x1" field-def samples data-names)
                              collect-result (map #(list % (fh/s-data*match-sample samples %)) data-names)
-                 ;            xxx (println "x2" collect-result)
+                             ;xxx (println "x2" collect-result)
                              collect-result (filter (fn[[data-name matches]] (not (empty? matches))) collect-result)]
                          (if-not (empty? collect-result) 
                            (do 
                              (doall (map #(progress-fn :sampled-match field-def %) collect-result))
                              [:sampled-match field-def collect-result]))))]
      (progress-fn :sampling-table (full-table-name table-def))
-     (map validate-fn (sample-collector fields {}))))
+     (map validate-fn (rename-keys (sample-collector fields {}) (result-names-to-fields fields)))))
   ([cache-fn progress-fn]
    (doall (remove nil? (apply concat (map #(sampled-scan-fields-for-sensitive-values cache-fn progress-fn %) (non-empty-tables cache-fn))))))
   ([cache-fn]

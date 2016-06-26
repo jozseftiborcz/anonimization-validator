@@ -144,9 +144,10 @@
   "Returns a match from data-name which matches one of the pattern from sample, or nil otherwise."
   [samples data-name]
   (let [match-one (fn[match-type pattern sample] 
-                    (case match-type
-                      :exact (re-matches (re-pattern pattern) sample)
-                      :like (re-find (re-pattern pattern) sample)))
+                    (if-not (nil? sample)
+                      (case match-type
+                        :exact (re-matches (re-pattern pattern) sample)
+                        :like (re-find (re-pattern pattern) sample))))
         match-any (fn[sample]
                     (not (empty? (filter (fn[[mt p]] (not (empty? (match-one mt p sample)))) (partition 2 (@s-data data-name))))))]
     (take 5 (filter match-any samples))))
