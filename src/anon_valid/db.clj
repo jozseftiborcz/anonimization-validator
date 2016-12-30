@@ -145,7 +145,7 @@
                                      nil 
                                      (if-let [opt (:schema-name *command-options*)] opt nil)
                                      table-pattern (into-array ["TABLE"])))]
-                                     ;"CUST%" (into-array ["TABLE"])))]
+;                                     "ERTEKPAPIR_P%" (into-array ["TABLE"])))]
            (filter #(or (not oracle?) 
                         (not (some #{(:table_schem %)} '("SYS" "SYSTEM")))) 
                    results))))
@@ -161,14 +161,14 @@
      (get-fields con-or-table nil)
      :else nil))
   ([con table] 
-   (resultset-seq (.getColumns (.getMetaData (:connection con)) 
+   (doall (resultset-seq (.getColumns (.getMetaData (:connection con)) 
                                nil 
                                (if-let [opt (:schema-name *command-options*)] opt nil)
-                               table nil))))
+                               table nil)))))
 
 ;; {:table_cat "xxx", :table_schem nil, :table_name "jos_vm_product", :column_name "product_id", :data_type 4, :type_name "INT", :column_size 10, :buffer_length 65535, :decimal_digits 0, :num_prec_radix 10, :nullable 0, :remarks "", :column_def nil, :sql_data_type 0, :sql_datetime_sub 0, :char_octet_length nil, :ordinal_position 1, :is_nullable "NO", :scope_catalog nil, :scope_schema nil, :scope_table nil, :source_data_type nil, :is_autoincrement "YES"}
 
-(defn alphanum? [x] (re-matches #"[\$\. \"\w]+" x))
+(defn alphanum? [x] (re-matches #"[\$\._ éÉáÁűŰúÚőŐóÓüÜöÖíÍ\"\w]+" x))
 
 ;; query builders
 ;; The following codes return specific queries used in the program
@@ -205,7 +205,7 @@
   "Takes a sample of values from a given table where field is not null"
   ([table-name field-name sample-size]
    {:pre [(alphanum? table-name) (alphanum? field-name)]}
-   [(qb*limit-result-set (str "select distinct * from " table-name " where \"" field-name "\" is not null") sample-size)])
+   [(qb*limit-result-set (str "select distinct \"" field-name "\" from " table-name " where \"" field-name "\" is not null") sample-size)])
    ;[(qb*limit-result-set (str "select distinct * from " table-name ) sample-size)])
   ([table-name field-name]
    (qb*sample-field table-name field-name *result-set-limit*)))

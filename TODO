@@ -3,4 +3,6 @@
 - invariant check: sensitive-data values for a name should have identical type (eg. string, int)
 - sensitive-data min length is not calculated correctly if regexp used
 - check at program start if select rights is assigned
+- scanning service with multiple database scanning
+- scan result auditing
 

@@ -146,8 +146,8 @@
   (let [match-one (fn[match-type pattern sample] 
                     (if-not (nil? sample)
                       (case match-type
-                        :exact (re-matches (re-pattern pattern) sample)
-                        :like (re-find (re-pattern pattern) sample))))
+                        :exact (re-matches (re-pattern pattern) (str sample))
+                        :like (re-find (re-pattern pattern) (str sample)))))
         match-any (fn[sample]
                     (not (empty? (filter (fn[[mt p]] (not (empty? (match-one mt p sample)))) (partition 2 (@s-data data-name))))))]
     (take 5 (filter match-any samples))))
